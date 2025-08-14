@@ -1,34 +1,17 @@
-// DoorAnchor.cs
 using UnityEngine;
 
+[DisallowMultipleComponent]
 public class DoorAnchor : MonoBehaviour
 {
-    [Tooltip("Distance from this anchor to the outward doorway surface, along this anchor's +forward.")]
-    public float edgeOffset = 0f;
+    // Marker component for doorway connection points.
+    // Keep it lightweight. We track usage in the generator (no need for flags here).
 
-    [Header("Doorway Size (meters)")]
-    public float doorwayWidth = 1.0f;
-    public float doorwayHeight = 2.2f;
-    public float blockerThickness = 0.10f;
-
-    [Header("Pivot")]
-    [Tooltip("If true, this transform's position is at floor level of the doorway; if false, assume pivot is at doorway center.")]
-    public bool pivotAtFloor = true;
-
-    public bool IsConnected { get; private set; }
-
-    public void MarkConnected()
+    // OPTIONAL: Draw an arrow in Scene view so you can see direction quickly.
+    private void OnDrawGizmos()
     {
-        IsConnected = true;
-    }
-
-    // simple visual aid
-    private void OnDrawGizmosSelected()
-    {
-        Gizmos.color = Color.cyan;
-        Vector3 up = transform.up * (pivotAtFloor ? doorwayHeight : doorwayHeight * 0.5f);
-        Gizmos.DrawLine(transform.position, transform.position + up);
-        Gizmos.color = Color.magenta;
-        Gizmos.DrawLine(transform.position, transform.position + transform.forward * 0.3f);
+        Gizmos.matrix = transform.localToWorldMatrix;
+        Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.9f);
+        Gizmos.DrawRay(Vector3.zero, Vector3.forward * 0.5f);
+        Gizmos.DrawWireCube(new Vector3(0f, 0f, 0.02f), new Vector3(0.2f, 0.2f, 0.04f));
     }
 }
