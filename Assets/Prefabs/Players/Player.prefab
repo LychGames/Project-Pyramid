@@ -65,7 +65,7 @@ Camera:
     y: 0
     width: 1
     height: 1
-  near clip plane: 0.3
+  near clip plane: 0.01
   far clip plane: 1000
   field of view: 60
   orthographic: 0
@@ -150,8 +150,8 @@ GameObject:
   - component: {fileID: 1943324945069549673}
   - component: {fileID: 1153990041474617115}
   - component: {fileID: 8813919750073352083}
-  - component: {fileID: 808635351474690554}
   - component: {fileID: 681828556714954700}
+  - component: {fileID: 3963022828526685655}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -269,35 +269,13 @@ CharacterController:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Height: 1.8
-  m_Radius: 0.5
-  m_SlopeLimit: 45
+  m_Height: 2
+  m_Radius: 0.28
+  m_SlopeLimit: 50
   m_StepOffset: 0.3
-  m_SkinWidth: 0.08
+  m_SkinWidth: 0.06
   m_MinMoveDistance: 0.001
-  m_Center: {x: 0, y: 0.9, z: 0}
---- !u!114 &808635351474690554
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3445014330807446232}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: dfe18e56d4f25bd43bbcf866a84e4f6f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  cam: {fileID: 4217395363950861086}
-  look: 150
-  maxSpeed: 4.5
-  accel: 12
-  decel: 14
-  airControl: 0.3
-  jump: 5
-  gravity: -20
-  bobFreq: 9
-  bobAmp: 0.04
+  m_Center: {x: 0, y: 1, z: 0}
 --- !u!114 &681828556714954700
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -311,3 +289,113 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   equippedAbility: {fileID: 11400000, guid: 78187fc80308055468339b562166cac0, type: 2}
+  preActivateSeconds: 0.4
+  onPreActivateStart:
+    m_PersistentCalls:
+      m_Calls: []
+  onPreActivateEnd:
+    m_PersistentCalls:
+      m_Calls: []
+--- !u!114 &3963022828526685655
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3445014330807446232}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb77cf44315dd9b43a817aeafaef2d7c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  cam: {fileID: 4217395363950861086}
+  mouseSensitivity: 50
+  minPitch: -85
+  maxPitch: 85
+  mouseSmoothTime: 0
+  maxMouseStep: 6
+  walkSpeed: 3.5
+  sprintSpeed: 6
+  sprintKey: 304
+  airControlUp: 0.35
+  airControlDown: 0.6
+  airSpeedFallMultiplier: 1.1
+  jumpLaunchForwardBoost: 1.4
+  jumpLaunchDecay: 6
+  coyoteTime: 0.02
+  jumpBuffer: 0.1
+  jumpCooldownSeconds: 0.3
+  gravity: -24
+  fallMultiplier: 4
+  lowJumpMultiplier: 4.2
+  maxFallSpeed: -120
+  headRatio: 0.125
+  tapHeads: 6.5
+  holdExtraHeads: 0
+  maxHeadsCap: 7
+  tapGuaranteeFraction: 0.95
+  jumpBlendTime: 0.14
+  jumpBlendCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  apexGravityMultiplier: 0.8
+  apexThreshold: 0.32
+  minAscendTime: 0.18
+  apexHangTime: 0.26
+  hangGravityMultiplier: 0.55
+  dramaticTapChance: 0.08
+  dramaticBonusHeads: 0.2
+  dramaticCooldown: 6
+  headroomMargin: 0.12
+  jumpImmediateKickFraction: 0.75
+  jumpForwardExtra: 2.4
+  inheritPlanarFactor: 0.5
+  jumpForwardDecay: 3.8
+  inheritPlanarDecay: 1.2
+  controllerHeight: 2
+  controllerRadius: 0.28
+  cameraHeight: 1.8
+  skinWidth: 0.06
+  enableHeadBob: 1
+  bobFreq: 8
+  bobAmp: 0.13
+  bobStartSmooth: 0.06
+  bobRunFreqMultiplier: 1.25
+  backBobAmpMultiplier: 0.3
+  enableWallSlide: 1
+  wallCheckDistance: 0.4
+  wallMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  wallProbeRadiusScale: 0.85
+  groundCheck: {fileID: 0}
+  groundRadius: 0.2
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  useFallCurve: 0
+  fallStartScale: 0.3
+  fallMidT: 0.5
+  fallMidScale: 0.65
+  fallCurveTime: 1
