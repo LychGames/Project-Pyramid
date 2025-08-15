@@ -82,6 +82,22 @@ public class FPController : MonoBehaviour
     [Tooltip("Decay rate for inherited ground speed (per second).")]
     public float inheritPlanarDecay = 1.2f;        // slowly bleeds off, keeps arc
 
+    [Header("Jump Arc (Input-Gated)")]
+    [Tooltip("Only add forward/inherit if move input magnitude exceeds this.")]
+    [Range(0f, 1f)] public float jumpInputDeadZone = 0.15f;
+
+    [Header("Tap vs Hold Airtime")]
+    [Tooltip("While rising AND holding jump, gravity is scaled by this (<1 = longer air).")]
+    [Range(0.2f, 1.0f)] public float holdAscendGravityScale = 0.65f;
+    [Tooltip("Max duration (s) the hold-sustain applies after jump start).")]
+    [Range(0.1f, 1.5f)] public float holdSustainTime = 0.80f;
+    [Tooltip("If NOT holding (a tap), use this strong gravity multiplier while rising.")]
+    [Range(1.5f, 12f)] public float tapAscendCutMultiplier = 8.0f;
+
+    [Header("Sprint Jump Arc")]
+    public float sprintArcBoost = 1.25f;     // scales the forward shove
+    public float sprintInheritBoost = 1.15f; // scales carried ground speed
+
     // ---------------- SIZE / CAMERA ----------------
     [Header("Player Dimensions")]
     public float controllerHeight = 2.0f, controllerRadius = 0.28f, cameraHeight = 1.8f, skinWidth = 0.06f;
@@ -205,10 +221,21 @@ public class FPController : MonoBehaviour
         if (groundedStrict)
         {
             lastGroundedTime = Time.time;
-            if (!wasGroundedPrev) hasJumpedSinceGrounded = false;
-            if (velocityY.y < 0f && !blendingJump) velocityY.y = -2f;
+
+            // Just landed this frame?
+            if (!wasGroundedPrev)
+            {
+                hasJumpedSinceGrounded = false;
+
+                // ⬇️ kill airborne carry the instant we land
+                _inheritVel = Vector3.zero;
+                jumpLaunchVel = Vector3.zero;
+            }
+
+            if (velocityY.y < 0f && !blendingJump) velocityY.y = -2f; // sticky ground
         }
         wasGroundedPrev = groundedStrict;
+
 
         if (Input.GetButtonDown("Jump")) lastJumpPressedTime = Time.time;
 
@@ -245,21 +272,39 @@ public class FPController : MonoBehaviour
         {
             jumpStartY = transform.position.y;
 
-            // --- Vertical: slower takeoff (but same overall height) ---
-            float kick = vTap * Mathf.Clamp01(jumpImmediateKickFraction); // e.g., 75% of tap speed now
-            if (velocityY.y < kick) velocityY.y = kick;                    // rest comes from blend/physics
+            // Vertical: solid tap velocity (rest blends up if holding)
+            if (velocityY.y < vTap) velocityY.y = vTap;
 
-            // --- Forward arc: inherit run-up + add extra push in look/input direction ---
-            Vector3 planarPre = cc.velocity; planarPre.y = 0f;              // actual ground sideways speed
-            _inheritVel = planarPre * Mathf.Clamp01(inheritPlanarFactor);   // keep some momentum
+            // Forward arc ONLY if there's actual input (W/A/S/D or diagonals)
+            float ix = Input.GetAxisRaw("Horizontal");
+            float iz = Input.GetAxisRaw("Vertical");
+            Vector2 in2 = new Vector2(ix, iz);
+            if (in2.sqrMagnitude > (jumpInputDeadZone * jumpInputDeadZone))
+            {
+                // inherit current ground momentum
+                Vector3 planarPre = cc.velocity; planarPre.y = 0f;
+                _inheritVel = planarPre * Mathf.Clamp01(inheritPlanarFactor);
 
-            Vector3 wish = new Vector3(Input.GetAxisRaw("Horizontal"), 0f, Input.GetAxisRaw("Vertical"));
-            if (wish.sqrMagnitude < 0.0001f) wish = Vector3.forward;        // no input → use facing
-            wish = transform.TransformDirection(wish.normalized);
+                // plus a small directed boost using YOUR field jumpLaunchForwardBoost
+                Vector3 wish = new Vector3(ix, 0f, iz).normalized;
+                wish = transform.TransformDirection(wish);
+                jumpLaunchVel = wish * Mathf.Max(0f, jumpLaunchForwardBoost);
+            }
+            else
+            {
+                // No input: straight up
+                _inheritVel = Vector3.zero;
+                jumpLaunchVel = Vector3.zero;
 
-            jumpLaunchVel = wish * Mathf.Max(0f, jumpForwardExtra);         // extra forward impulse
+                // If sprinting, increase the forward arc
+                if (Input.GetKey(sprintKey))
+                {
+                    jumpLaunchVel *= sprintArcBoost;
+                    _inheritVel *= sprintInheritBoost;
+                }
+            }
 
-            // (unchanged bookkeeping)
+            // bookkeeping you already had
             jumpStartTime = Time.time;
             blendingJump = true;
             tapHeightW = tapH; maxHeightW = maxH;
@@ -269,15 +314,21 @@ public class FPController : MonoBehaviour
         }
 
 
+
+
         // --- Gravity (clear ascend vs fall + apex hang + fall curve) ---
         float g = gravity;
         float timeSinceJump = Time.time - jumpStartTime;
         bool nearApex = Mathf.Abs(velocityY.y) < apexThreshold;
 
         if (nearApex && timeSinceJump > 0.02f && timeSinceJump < (apexHangTime + 0.02f))
+        {
             g *= hangGravityMultiplier; // gentle float
+        }
         else if (nearApex)
+        {
             g *= apexGravityMultiplier;
+        }
 
         if (velocityY.y < 0f)
         {
@@ -288,16 +339,27 @@ public class FPController : MonoBehaviour
                 float t = Mathf.Clamp01((Time.time - fallStartTime) / Mathf.Max(0.01f, fallCurveTime));
                 scale = fallAccelCurve.Evaluate(t); // 0.30 -> 1.0 default
             }
-            g *= fallMultiplier * scale;
-        }
+            g *= fallMultiplier * scale;   // falling branch ends here
+        }                                   // <--- this brace is the one that was missing
         else
         {
-            float ascended = transform.position.y - jumpStartY;
-            bool pastMinAscend = timeSinceJump > minAscendTime;
-            bool beyondTap = ascended >= (tapGuaranteeFraction * tapHeightW);
-            if (!Input.GetButton("Jump") && pastMinAscend && beyondTap)
-                g *= lowJumpMultiplier; // release early -> short hop
+            // --- Rising: Tap vs Hold airtime control ---
+            float tSinceJump = Time.time - jumpStartTime;
+            bool holding = Input.GetButton("Jump");
+
+            if (holding && tSinceJump <= holdSustainTime)
+            {
+                g *= Mathf.Clamp(holdAscendGravityScale, 0.2f, 1f);   // e.g., 0.65
+            }
+            else
+            {
+                g *= tapAscendCutMultiplier;                           // e.g., 8.0
+            }
         }
+
+
+
+
 
         // blend towards vMax while holding
         if (blendingJump)
@@ -316,23 +378,26 @@ public class FPController : MonoBehaviour
 
         prevVelY = velocityY.y;
 
-        // Decay the extra forward boost
-        if (jumpLaunchVel.sqrMagnitude > 0f)
-        {
-            float kExtra = Mathf.Exp(-jumpForwardDecay * Time.deltaTime);
-            jumpLaunchVel *= kExtra;
-        }
+            // Decay extra forward push (uses your jumpLaunchDecay)
+            if (jumpLaunchVel.sqrMagnitude > 0f)
+            {
+                float kExtra = Mathf.Exp(-jumpLaunchDecay * Time.deltaTime);
+                jumpLaunchVel *= kExtra;
+            }
 
-        // Decay the inherited ground momentum (slower decay to keep arc)
-        if (_inheritVel.sqrMagnitude > 0f)
-        {
-            float kInherit = Mathf.Exp(-inheritPlanarDecay * Time.deltaTime);
-            _inheritVel *= kInherit;
-        }
+            // Decay inherited ground momentum (if you already have inheritPlanarDecay, keep using it;
+            // otherwise you can reuse jumpLaunchDecay here, or add a new public float inheritPlanarDecay = 1.1f;)
+            if (_inheritVel.sqrMagnitude > 0f)
+            {
+                float kInherit = Mathf.Exp(-(inheritPlanarDecay) * Time.deltaTime); // or jumpLaunchDecay if you prefer one knob
+                _inheritVel *= kInherit;
+            }
 
 
-        // --- Lateral movement (up vs down control) ---
-        bool ascending = velocityY.y > 0f, descending = velocityY.y <= 0f;
+
+
+            // --- Lateral movement (up vs down control) ---
+            bool ascending = velocityY.y > 0f, descending = velocityY.y <= 0f;
         float control = groundedStrict ? 1f : (ascending ? Mathf.Clamp01(airControlUp) : Mathf.Clamp01(airControlDown));
         float speedMult = (groundedStrict || ascending) ? 1f : airSpeedFallMultiplier;
         Vector3 lateral = transform.TransformDirection(input) * targetSpeed * control * speedMult;
@@ -348,9 +413,10 @@ public class FPController : MonoBehaviour
             }
         }
 
-        // --- Single Move ---
-        Vector3 displacement = (lateral + _inheritVel + jumpLaunchVel + velocityY) * Time.deltaTime;
+        Vector3 airborneExtra = groundedStrict ? Vector3.zero : (_inheritVel + jumpLaunchVel);
+        Vector3 displacement = (lateral + airborneExtra + velocityY) * Time.deltaTime;
         cc.Move(displacement);
+
     }
 
     void LateUpdate()

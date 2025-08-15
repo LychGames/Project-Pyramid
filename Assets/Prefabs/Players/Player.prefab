@@ -315,24 +315,24 @@ MonoBehaviour:
   mouseSmoothTime: 0
   maxMouseStep: 6
   walkSpeed: 3.5
-  sprintSpeed: 6
+  sprintSpeed: 7
   sprintKey: 304
   airControlUp: 0.35
-  airControlDown: 0.6
-  airSpeedFallMultiplier: 1.1
+  airControlDown: 0.7
+  airSpeedFallMultiplier: 1.15
   jumpLaunchForwardBoost: 1.4
   jumpLaunchDecay: 6
   coyoteTime: 0.02
   jumpBuffer: 0.1
-  jumpCooldownSeconds: 0.3
+  jumpCooldownSeconds: 0.35
   gravity: -24
   fallMultiplier: 4
-  lowJumpMultiplier: 4.2
+  lowJumpMultiplier: 6
   maxFallSpeed: -120
   headRatio: 0.125
-  tapHeads: 6.5
+  tapHeads: 5
   holdExtraHeads: 0
-  maxHeadsCap: 7
+  maxHeadsCap: 5.3
   tapGuaranteeFraction: 0.95
   jumpBlendTime: 0.14
   jumpBlendCurve:
@@ -369,10 +369,16 @@ MonoBehaviour:
   dramaticCooldown: 6
   headroomMargin: 0.12
   jumpImmediateKickFraction: 0.75
-  jumpForwardExtra: 2.4
-  inheritPlanarFactor: 0.5
-  jumpForwardDecay: 3.8
-  inheritPlanarDecay: 1.2
+  jumpForwardExtra: 2.5
+  inheritPlanarFactor: 0.7
+  jumpForwardDecay: 4.2
+  inheritPlanarDecay: 1
+  jumpInputDeadZone: 0.15
+  holdAscendGravityScale: 0.65
+  holdSustainTime: 0.8
+  tapAscendCutMultiplier: 8
+  sprintArcBoost: 1.25
+  sprintInheritBoost: 1.15
   controllerHeight: 2
   controllerRadius: 0.28
   cameraHeight: 1.8

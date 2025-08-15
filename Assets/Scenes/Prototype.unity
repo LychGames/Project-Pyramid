@@ -275,7 +275,8 @@ MonoBehaviour:
   levelRoot: {fileID: 2114845929}
   maxRooms: 10
   autoGenerateOnPlay: 1
-  seed: 42
+  randomizeSeed: 1
+  seed: 0
   maxPlacementAttemptsPerRoom: 30
   avoidImmediateStraight: 1
   placementCollisionMask:
@@ -284,6 +285,7 @@ MonoBehaviour:
   doorBlockerPrefab: {fileID: 4825619940582829198, guid: 5c4de261340f5af459d1f65eda2a8d94, type: 3}
   logSteps: 0
   drawGizmos: 1
+  usedSeed: 0
 --- !u!4 &598219553
 Transform:
   m_ObjectHideFlags: 0

@@ -3,6 +3,10 @@ using UnityEngine;
 
 public class SimpleLevelGenerator : MonoBehaviour
 {
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Inspector
+    // ─────────────────────────────────────────────────────────────────────────────
+
     [Header("Prefabs")]
     [SerializeField] private GameObject startRoomPrefab;
     [SerializeField] private List<GameObject> roomPrefabs = new List<GameObject>();
@@ -13,13 +17,17 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Header("Generation")]
     [SerializeField, Min(1)] private int maxRooms = 6;
     [SerializeField] private bool autoGenerateOnPlay = true;
-    [SerializeField] private int seed = 42; // -1 for random
+
+    [Tooltip("If ON, a fresh random seed is used each Generate(). If OFF, 'seed' is used.")]
+    [SerializeField] private bool randomizeSeed = true;
+
+    [SerializeField] private int seed = 42; // used when randomizeSeed == false
     [SerializeField, Min(1)] private int maxPlacementAttemptsPerRoom = 30;
     [SerializeField] private bool avoidImmediateStraight = true;
 
     [Header("Overlap Check")]
     [Tooltip("Only colliders on these layers are used to detect overlap. Put each room's RoomBounds collider on one of these layers (e.g., GenBounds).")]
-    [SerializeField] private LayerMask placementCollisionMask;
+    [SerializeField] private LayerMask placementCollisionMask = ~0;
 
     [Header("Unused Door Sealing (optional)")]
     [Tooltip("Optional. If assigned, unused doorways get sealed with this simple blocker (e.g., a cube). DO NOT assign your decorative DoorCap here.")]
@@ -29,23 +37,41 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] private bool logSteps = false;
     [SerializeField] private bool drawGizmos = true;
 
-    // runtime
+    [Header("Runtime (info)")]
+    [SerializeField, Tooltip("The seed actually used for the last Generate() call.")]
+    private int usedSeed = 0;
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Runtime state (no allocation in inner loops)
+    // ─────────────────────────────────────────────────────────────────────────────
+
     private System.Random rng;
     private readonly List<DoorAnchor> openAnchors = new();
     private readonly HashSet<DoorAnchor> usedAnchors = new();
     private readonly List<GameObject> spawnedRooms = new();
     private Vector3 lastGrowthDir = Vector3.zero;
+    // runtime counters per prefab
+    private readonly Dictionary<GameObject, int> _spawnCounts = new();
+    private int _placedSummonRooms = 0;
+
+    // Overlap non-alloc cache (reduces GC during placement)
+    private const int OverlapCache = 64;
+    private static readonly Collider[] overlapHits = new Collider[OverlapCache];
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Unity
+    // ─────────────────────────────────────────────────────────────────────────────
 
     private void Awake()
     {
         if (!ValidateSerializedFields()) { enabled = false; return; }
+
         if (levelRoot == null)
         {
             var go = new GameObject("LevelRoot");
             levelRoot = go.transform;
             levelRoot.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
         }
-        rng = (seed < 0) ? new System.Random() : new System.Random(seed);
     }
 
     private void Start()
@@ -57,10 +83,36 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
     }
 
+    private void Update()
+    {
+        // Handy editor-time test: press R to regenerate while in Play Mode
+        if (Application.isPlaying && Input.GetKeyDown(KeyCode.R))
+        {
+            ClearLevel();
+            Generate();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Public / Context
+    // ─────────────────────────────────────────────────────────────────────────────
+
     [ContextMenu("Generate Now")]
     public void Generate()
     {
+        void InitRng()
+        {
+            usedSeed = randomizeSeed
+                ? System.Environment.TickCount ^ System.Guid.NewGuid().GetHashCode()  // avoids repeats on fast regen
+                : seed;
+
+            rng = new System.Random(usedSeed);
+            Random.InitState(usedSeed);
+            if (logSteps) Debug.Log($"[Gen] Seed = {usedSeed}");
+        }
+
         ClearLevel();
+        InitRng();
 
         // 1) Spawn start room
         var startRoom = Instantiate(startRoomPrefab, levelRoot);
@@ -78,13 +130,12 @@ public class SimpleLevelGenerator : MonoBehaviour
         int safety = maxRooms * maxPlacementAttemptsPerRoom * 3;
         while (roomsPlaced < maxRooms && openAnchors.Count > 0 && safety-- > 0)
         {
-            // pull a target anchor (FIFO)
+            // pull a target anchor (FIFO for consistent breadth)
             var target = openAnchors[0];
             openAnchors.RemoveAt(0);
-            if (target == null) continue;
-            if (usedAnchors.Contains(target)) continue;
+            if (!target || usedAnchors.Contains(target)) continue;
 
-            bool placed = TryAttachRoomAt(target, ref roomsPlaced, ref failsInARow);
+            bool placed = TryAttachRoomAt(target, ref roomsPlaced);
 
             if (!placed)
             {
@@ -104,58 +155,76 @@ public class SimpleLevelGenerator : MonoBehaviour
         // 3) Seal remaining unused anchors (optional)
         if (doorBlockerPrefab != null)
         {
-            foreach (var a in openAnchors)
+            for (int i = 0; i < openAnchors.Count; i++)
             {
-                if (a == null || usedAnchors.Contains(a)) continue;
+                var a = openAnchors[i];
+                if (!a || usedAnchors.Contains(a)) continue;
                 PlaceBlockerAt(a);
             }
         }
+
         BakeNavMeshIfReady();
 
-
-
-        if (logSteps) Debug.Log($"[Generator] Done. Spawned {spawnedRooms.Count} room(s). Open anchors left: {openAnchors.Count}");
-   
+        if (logSteps) Debug.Log($"[Generator] Done. Spawned {spawnedRooms.Count} room(s). Open anchors left: {openAnchors.Count}. Seed={usedSeed}");
     }
 
-    private bool TryAttachRoomAt(DoorAnchor targetAnchor, ref int roomsPlaced, ref int failsInARow)
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Core placement
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    private bool TryAttachRoomAt(DoorAnchor targetAnchor, ref int roomsPlaced)
     {
         // choose a few random prefabs to try
+        int prefabCount = roomPrefabs.Count;
         for (int attempt = 0; attempt < maxPlacementAttemptsPerRoom; attempt++)
         {
-            var prefab = roomPrefabs[rng.Next(roomPrefabs.Count)];
+            var prefab = PickNextPrefabFor(targetAnchor);
+            if (prefab == null) return false;
+
+            // Instantiate candidate *inactive* so Awake/Start/physics don’t fire until accepted
             var room = Instantiate(prefab, levelRoot);
+            room.SetActive(false);
             ForceUnitScale(room.transform);
 
+            // pick a door on the candidate that best faces the opposite of target
             var chosenAnchor = ChooseAnchorFacingOpposite(room, targetAnchor);
-            if (chosenAnchor == null)
+            if (!chosenAnchor)
             {
-                Destroy(room);
+                DestroyImmediate(room);
                 continue;
             }
 
+            // align transforms
             AlignRoom(room, chosenAnchor, targetAnchor);
 
+            // discourage straight-line growth if requested
             if (avoidImmediateStraight && lastGrowthDir != Vector3.zero)
             {
-                // discourage placing a room that continues exactly straight from the last step
                 var dir = (targetAnchor.transform.forward).normalized;
                 if (Vector3.Dot(dir, lastGrowthDir) > 0.95f)
                 {
-                    // too straight; try a different candidate
-                    Destroy(room);
+                    DestroyImmediate(room);
                     continue;
                 }
             }
 
+            // overlap check (non-alloc)
             if (OverlapsExisting(room))
             {
-                Destroy(room);
+                DestroyImmediate(room);
                 continue;
             }
 
             // accept placement
+            room.SetActive(true);
             spawnedRooms.Add(room);
+            // track counts for RoomMeta limits
+            if (!_spawnCounts.ContainsKey(prefab)) _spawnCounts[prefab] = 0;
+            _spawnCounts[prefab]++;
+
+            var metaPlaced = prefab.GetComponent<RoomMeta>();
+            if (metaPlaced && metaPlaced.category == RoomCategory.Summon)
+                _placedSummonRooms++;
             usedAnchors.Add(targetAnchor);
             usedAnchors.Add(chosenAnchor);
             roomsPlaced++;
@@ -169,6 +238,52 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
         return false;
     }
+   
+    // Weighted pick that respects RoomMeta limits & door rules
+    GameObject PickNextPrefabFor(DoorAnchor targetAnchor)
+    {
+        float total = 0f;
+        var bag = new List<(GameObject prefab, float w)>();
+
+        for (int i = 0; i < roomPrefabs.Count; i++)
+        {
+            var p = roomPrefabs[i];
+            if (!p) continue;
+
+            var meta = p.GetComponent<RoomMeta>();
+            if (!meta) continue;
+
+            // --- limits ---
+            _spawnCounts.TryGetValue(p, out int used);
+            if (meta.uniqueOnce && used > 0) continue;
+            if (meta.maxCount > 0 && used >= meta.maxCount) continue;
+
+            // --- door compatibility ---
+            bool okDoor = meta.connectsAll;
+            if (!okDoor)
+            {
+                // If target door only allows some categories, enforce it
+                if ((targetAnchor.allowedTargets & meta.category) != 0) okDoor = true;
+            }
+            if (!okDoor) continue;
+
+            // example rarity: allow at most one Summon
+            if (meta.category == RoomCategory.Summon && _placedSummonRooms >= 1) continue;
+
+            float w = Mathf.Max(0.0001f, meta.weight);
+            total += w;
+            bag.Add((p, w));
+        }
+
+        if (bag.Count == 0) return null;
+
+        float r = (float)rng.NextDouble() * total;
+        foreach (var (prefab, w) in bag)
+        {
+            if ((r -= w) <= 0f) return prefab;
+        }
+        return bag[bag.Count - 1].prefab;
+    }
 
     private DoorAnchor ChooseAnchorFacingOpposite(GameObject roomInstance, DoorAnchor target)
     {
@@ -179,9 +294,10 @@ public class SimpleLevelGenerator : MonoBehaviour
         float bestScore = -1f;
         Vector3 neededDir = -target.transform.forward; // want approx opposite
 
-        foreach (var a in anchors)
+        for (int i = 0; i < anchors.Length; i++)
         {
-            if (a == null) continue;
+            var a = anchors[i];
+            if (!a) continue;
             if (usedAnchors.Contains(a)) continue;
 
             float score = Vector3.Dot(a.transform.forward.normalized, neededDir);
@@ -200,7 +316,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         Quaternion from = Quaternion.FromToRotation(roomAnchor.transform.forward, -target.transform.forward);
         room.transform.rotation = from * room.transform.rotation;
 
-        // 2) After rotating the whole room, move so anchors coincide
+        // 2) Move so anchors coincide
         Vector3 offset = target.transform.position - roomAnchor.transform.position;
         room.transform.position += offset;
     }
@@ -208,9 +324,10 @@ public class SimpleLevelGenerator : MonoBehaviour
     private void AddRoomAnchorsToOpenList(GameObject room, DoorAnchor exclude)
     {
         var anchors = room.GetComponentsInChildren<DoorAnchor>(true);
-        foreach (var a in anchors)
+        for (int i = 0; i < anchors.Length; i++)
         {
-            if (a == null) continue;
+            var a = anchors[i];
+            if (!a) continue;
             if (a == exclude) continue;
             if (usedAnchors.Contains(a)) continue;
             openAnchors.Add(a);
@@ -219,9 +336,9 @@ public class SimpleLevelGenerator : MonoBehaviour
 
     private void PlaceBlockerAt(DoorAnchor a)
     {
-        if (doorBlockerPrefab == null || a == null) return;
+        if (doorBlockerPrefab == null || !a) return;
         var b = Instantiate(doorBlockerPrefab, a.transform.position, a.transform.rotation, levelRoot);
-        // Optional: nudge a tiny bit so it doesn’t z-fight with trims
+        // tiny nudge so it doesn’t z-fight with trims
         b.transform.position += a.transform.forward * 0.01f;
     }
 
@@ -233,26 +350,32 @@ public class SimpleLevelGenerator : MonoBehaviour
 
     private bool OverlapsExisting(GameObject candidate)
     {
-        // We check all colliders under candidate that are on the placementCollisionMask.
-        // For each, run Physics.OverlapBox against the world, then reject hits that belong to candidate itself.
+        // Check all colliders under candidate that are on the placementCollisionMask.
+        // Use non-alloc OverlapBox for fewer GC spikes.
         var colliders = candidate.GetComponentsInChildren<Collider>(true);
         bool anyRelevant = false;
 
-        foreach (var c in colliders)
+        for (int i = 0; i < colliders.Length; i++)
         {
-            if (c == null) continue;
-            if (((1 << c.gameObject.layer) & placementCollisionMask.value) == 0) continue; // skip layers we don't check
+            var c = colliders[i];
+            if (!c) continue;
+
+            int layerBit = 1 << c.gameObject.layer;
+            if ((placementCollisionMask.value & layerBit) == 0) continue; // skip layers we don't check
             anyRelevant = true;
 
-            // support BoxCollider and Capsule/Sphere by approximating with bounds box
-            Quaternion rot = c.transform.rotation;
-            Bounds b = c.bounds; // world space
+            // Approximate all collider types using Bounds (world space AABB)
+            Bounds b = c.bounds;
             Vector3 half = b.extents;
-            Collider[] hits = Physics.OverlapBox(b.center, half, rot, placementCollisionMask, QueryTriggerInteraction.Ignore);
-            foreach (var h in hits)
+
+            // Note: using the collider's rotation is only meaningful for BoxCollider; for AABB we pass Quaternion.identity.
+            int hitCount = Physics.OverlapBoxNonAlloc(b.center, half, overlapHits, Quaternion.identity, placementCollisionMask, QueryTriggerInteraction.Ignore);
+
+            for (int h = 0; h < hitCount; h++)
             {
-                if (h == null) continue;
-                if (h.transform.root == candidate.transform.root) continue; // ignore self
+                var hit = overlapHits[h];
+                if (!hit) continue;
+                if (hit.transform.root == candidate.transform.root) continue; // ignore self
                 return true; // overlap with existing
             }
         }
@@ -264,27 +387,49 @@ public class SimpleLevelGenerator : MonoBehaviour
         return false;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Seed / RNG
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    private void InitRng()
+    {
+        usedSeed = randomizeSeed
+    ? System.Environment.TickCount ^ System.Guid.NewGuid().GetHashCode()
+    : seed;
+        rng = new System.Random(usedSeed);
+        Random.InitState(usedSeed);
+
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    //  Cleanup & validation
+    // ─────────────────────────────────────────────────────────────────────────────
+
     private void ClearLevel()
     {
         openAnchors.Clear();
         usedAnchors.Clear();
-        foreach (var r in spawnedRooms)
+
+        for (int i = 0; i < spawnedRooms.Count; i++)
         {
-            if (r != null) DestroyImmediate(r);
+            var r = spawnedRooms[i];
+            if (r) DestroyImmediate(r);
         }
         spawnedRooms.Clear();
+        _spawnCounts.Clear();
+        _placedSummonRooms = 0;
     }
 
     private bool ValidateSerializedFields()
     {
         bool ok = true;
+
         if (startRoomPrefab == null) { Debug.LogError("[Generator] Start Room Prefab is not assigned."); ok = false; }
         if (roomPrefabs == null || roomPrefabs.Count == 0) { Debug.LogError("[Generator] Room Prefabs list is empty."); ok = false; }
 
         if (placementCollisionMask.value == 0)
         {
-            // Default to Everything so overlaps still work, and let you know politely.
-            placementCollisionMask = ~0;
+            placementCollisionMask = ~0; // default to Everything so overlaps still work
             Debug.LogWarning("[Generator] placementCollisionMask was zero; defaulting to Everything. " +
                              "Tip: create a dedicated layer (e.g., 'GenBounds') for each RoomBounds collider " +
                              "and set the mask to that for faster/cleaner checks.");
@@ -292,22 +437,24 @@ public class SimpleLevelGenerator : MonoBehaviour
         return ok;
     }
 
-
 #if UNITY_EDITOR
     private void OnDrawGizmos()
     {
         if (!drawGizmos) return;
-        // draw open anchors in play mode for quick visual
+
+        // Draw open anchors in play mode for quick visual
         Gizmos.color = new Color(1f, 0.6f, 0.15f, 0.9f);
-        foreach (var a in openAnchors)
+        for (int i = 0; i < openAnchors.Count; i++)
         {
-            if (a == null) continue;
+            var a = openAnchors[i];
+            if (!a) continue;
             Gizmos.DrawSphere(a.transform.position, 0.06f);
             Gizmos.DrawRay(a.transform.position, a.transform.forward * 0.4f);
         }
     }
 #endif
-    // Put this inside the class SimpleLevelGenerator, not inside Generate()
+
+    // Keep this inside the class, not inside Generate()
     void BakeNavMeshIfReady()
     {
         var rootGO = levelRoot ? levelRoot.gameObject : gameObject;
@@ -315,5 +462,3 @@ public class SimpleLevelGenerator : MonoBehaviour
         if (baker) baker.BakeNow();
     }
 }
-
-

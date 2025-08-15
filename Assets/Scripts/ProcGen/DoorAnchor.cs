@@ -3,6 +3,12 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class DoorAnchor : MonoBehaviour
 {
+    // add near the top of the class:
+    public RoomCategory allowedTargets = RoomCategory.Hallway | RoomCategory.Small | RoomCategory.Medium | RoomCategory.Special | RoomCategory.Summon;
+
+    // optional: for a pure hallway door, set this to Hallway only in the prefab.
+    // for "connects all" hubs, you can leave it as-is or toggle in RoomMeta.
+
     // Marker component for doorway connection points.
     // Keep it lightweight. We track usage in the generator (no need for flags here).
 
