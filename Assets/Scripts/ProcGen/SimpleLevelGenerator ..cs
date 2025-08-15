@@ -40,6 +40,9 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Header("Runtime (info)")]
     [SerializeField, Tooltip("The seed actually used for the last Generate() call.")]
     private int usedSeed = 0;
+    [Header("Flow Bias")]
+    [SerializeField, Range(0f, 1f)] private float preferTurnBias = 0.35f; // 0 = no bias, 0.35 feels good
+    [SerializeField, Min(0)] private int forceFirstTurnWithin = 3;         // guarantee at least one turn early (0 = off)
 
     // ─────────────────────────────────────────────────────────────────────────────
     //  Runtime state (no allocation in inner loops)
@@ -174,6 +177,18 @@ public class SimpleLevelGenerator : MonoBehaviour
 
     private bool TryAttachRoomAt(DoorAnchor targetAnchor, ref int roomsPlaced)
     {
+        float ComputeTurnScore(DoorAnchor target, DoorAnchor chosenOnCandidate)
+        {
+            // Incoming direction is where the target room was growing (its forward)
+            Vector3 inDir = target.transform.forward.normalized;
+            // Candidate will continue in the opposite of its chosen door's forward
+            Vector3 outDir = (-chosenOnCandidate.transform.forward).normalized;
+
+            float dot = Mathf.Clamp01(Vector3.Dot(inDir, outDir)); // 1 = straight, 0 = 90-degree turn
+            float turn = 1f - dot; // 0=straight, 1=hard turn
+            return turn;
+        }
+
         // choose a few random prefabs to try
         int prefabCount = roomPrefabs.Count;
         for (int attempt = 0; attempt < maxPlacementAttemptsPerRoom; attempt++)
@@ -181,60 +196,73 @@ public class SimpleLevelGenerator : MonoBehaviour
             var prefab = PickNextPrefabFor(targetAnchor);
             if (prefab == null) return false;
 
-            // Instantiate candidate *inactive* so Awake/Start/physics don’t fire until accepted
-            var room = Instantiate(prefab, levelRoot);
-            room.SetActive(false);
-            ForceUnitScale(room.transform);
+            // ---- SAMPLE A FEW CANDIDATES AND PICK THE BEST TURN ----
+            const int samples = 6;
 
-            // pick a door on the candidate that best faces the opposite of target
-            var chosenAnchor = ChooseAnchorFacingOpposite(room, targetAnchor);
-            if (!chosenAnchor)
+            GameObject chosenPrefabAsset = null;   // asset from roomPrefabs list
+            GameObject chosenGhost = null;         // inactive instance we will accept
+            DoorAnchor chosenDoor = null;          // the door on the chosen ghost
+            float chosenScore = float.NegativeInfinity;
+
+            for (int s = 0; s < samples; s++)
             {
-                DestroyImmediate(room);
-                continue;
-            }
+                var prefabAsset = PickNextPrefabFor(targetAnchor);
+                if (prefabAsset == null) break;
 
-            // align transforms
-            AlignRoom(room, chosenAnchor, targetAnchor);
+                // spawn a test instance (inactive)
+                var ghost = Instantiate(prefabAsset, levelRoot);
+                ghost.SetActive(false);
 
-            // discourage straight-line growth if requested
-            if (avoidImmediateStraight && lastGrowthDir != Vector3.zero)
-            {
-                var dir = (targetAnchor.transform.forward).normalized;
-                if (Vector3.Dot(dir, lastGrowthDir) > 0.95f)
+                var door = ChooseAnchorFacingOpposite(ghost, targetAnchor);
+                if (!door) { DestroyImmediate(ghost); continue; }
+
+                // align and check overlap
+                AlignRoom(ghost, door, targetAnchor);
+                if (OverlapsExisting(ghost)) { DestroyImmediate(ghost); continue; }
+
+                // score: prefer turns over straight
+                float turn = ComputeTurnScore(targetAnchor, door); // 0=straight, 1=90°+
+                float score = (preferTurnBias > 0f) ? turn * preferTurnBias : 0f;
+
+                // keep the best
+                if (score > chosenScore)
                 {
-                    DestroyImmediate(room);
-                    continue;
+                    if (chosenGhost) DestroyImmediate(chosenGhost); // discard previous best
+                    chosenGhost = ghost;
+                    chosenDoor = door;
+                    chosenPrefabAsset = prefabAsset;
+                    chosenScore = score;
+                }
+                else
+                {
+                    DestroyImmediate(ghost); // discard this trial
                 }
             }
 
-            // overlap check (non-alloc)
-            if (OverlapsExisting(room))
-            {
-                DestroyImmediate(room);
-                continue;
-            }
+            // nothing viable
+            if (!chosenGhost) return false;
 
-            // accept placement
-            room.SetActive(true);
-            spawnedRooms.Add(room);
-            // track counts for RoomMeta limits
-            if (!_spawnCounts.ContainsKey(prefab)) _spawnCounts[prefab] = 0;
-            _spawnCounts[prefab]++;
-
-            var metaPlaced = prefab.GetComponent<RoomMeta>();
-            if (metaPlaced && metaPlaced.category == RoomCategory.Summon)
-                _placedSummonRooms++;
+            // ---- ACCEPT THE WINNER ----
+            chosenGhost.SetActive(true);
+            spawnedRooms.Add(chosenGhost);
             usedAnchors.Add(targetAnchor);
-            usedAnchors.Add(chosenAnchor);
+            usedAnchors.Add(chosenDoor);
             roomsPlaced++;
             lastGrowthDir = (targetAnchor.transform.forward).normalized;
 
-            // bring in the new room's unused anchors
-            AddRoomAnchorsToOpenList(room, exclude: chosenAnchor);
+            // bring in the new room's other doors
+            AddRoomAnchorsToOpenList(chosenGhost, exclude: chosenDoor);
 
-            if (logSteps) Debug.Log($"[Generator] Placed '{prefab.name}' at attempt {attempt + 1}. Rooms: {roomsPlaced}");
+            // track counts by PREFAB ASSET (so limits/uniques work)
+            if (!_spawnCounts.ContainsKey(chosenPrefabAsset)) _spawnCounts[chosenPrefabAsset] = 0;
+            _spawnCounts[chosenPrefabAsset]++;
+
+            var metaPlaced = chosenGhost.GetComponent<RoomMeta>();
+            if (metaPlaced && metaPlaced.category == RoomCategory.Summon) _placedSummonRooms++;
+
+            if (logSteps) Debug.Log($"[Generator] Placed '{chosenGhost.name}' turnScore={chosenScore:F2}.");
             return true;
+
         }
         return false;
     }
@@ -460,5 +488,12 @@ public class SimpleLevelGenerator : MonoBehaviour
         var rootGO = levelRoot ? levelRoot.gameObject : gameObject;
         var baker = rootGO.GetComponent<NavMeshRuntimeBaker>();
         if (baker) baker.BakeNow();
+    }
+    float ComputeTurnScore(DoorAnchor target, DoorAnchor chosenOnCandidate)
+    {
+        Vector3 inDir = target.transform.forward.normalized;
+        Vector3 outDir = (-chosenOnCandidate.transform.forward).normalized;
+        float dot = Mathf.Clamp01(Vector3.Dot(inDir, outDir)); // 1 straight, 0 right-angle
+        return 1f - dot;
     }
 }
