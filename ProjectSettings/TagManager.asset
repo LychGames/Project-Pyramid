@@ -12,12 +12,12 @@ TagManager:
   - LevelGeo
   - Water
   - UI
-  - 
-  - 
-  - 
-  - 
-  - 
-  - 
+  - DoorTrigger
+  - Player
+  - Enemy
+  - Props
+  - Interactable
+  - Projectile
   - 
   - 
   - 

@@ -206,6 +206,8 @@ MonoBehaviour:
   uniqueOnce: 1
   maxCount: 1
   clearancePadding: 0
+  isStartPrefab: 0
+  isEndPrefab: 0
 --- !u!1 &2070035870004797422
 GameObject:
   m_ObjectHideFlags: 0

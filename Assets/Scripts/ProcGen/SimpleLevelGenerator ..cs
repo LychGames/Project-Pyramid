@@ -1,728 +1,439 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Procedural layout generator with Corridor-First growth,
-/// robust overlap prevention, and seed control.
-/// </summary>
 public class SimpleLevelGenerator : MonoBehaviour
 {
-    // ───────────────────────────────── Prefabs / Root ───────────────────────────
     [Header("Prefabs")]
-    [SerializeField] private GameObject startRoomPrefab;
-    [SerializeField] private List<GameObject> roomPrefabs = new List<GameObject>();
+    public GameObject startRoomPrefab;
+    public List<GameObject> roomPrefabs = new List<GameObject>();
 
-    [Header("Hierarchy (optional)")]
-    [SerializeField] private Transform levelRoot; // If null, created at runtime
+    [Header("Hierarchy")]
+    public Transform levelRoot;
 
-    // ───────────────────────────────── Generation ───────────────────────────────
     [Header("Generation")]
-    [Tooltip("Maximum number of rooms INCLUDING the start room.")]
-    [SerializeField, Min(1)] private int maxRooms = 12;
+    [Min(1)] public int maxRooms = 60;
+    public bool autoGenerateOnPlay = true;
+    public bool randomizeSeed = true;
+    public int seedInput = 0;
 
-    [SerializeField] private bool autoGenerateOnPlay = true;
+    [Header("60° Lattice")]
+    [Min(0.1f)] public float cellSize = 2.5f;  // lattice step C
+    public bool snapYawTo30 = true;
+    public bool snapPosToLattice = true;
 
-    [Header("Seed (0 = random each run)")]
-    [Tooltip("Enter a seed for reproducible layouts. Set 0 to randomize each run.")]
-    [SerializeField] private int seedInput = 0;
+    [Header("Overlap")]
+    public LayerMask placementCollisionMask; // LevelGeo only
+    public bool allowPortalOverlap = true;
+    public Vector2 portalSize = new Vector2(2.0f, 3.5f);   // (doorW, doorH)
+    public float portalSlabThickness = 0.02f;
+    public bool disableOverlapForDebug = false;
 
-    [SerializeField, Min(1)] private int maxPlacementAttemptsPerRoom = 30;
-    [Header("Grid Snap (optional)")]
-    [SerializeField] bool enableGridSnap = true;
-    [SerializeField, Min(0.1f)] float gridSize = 2f;   // try 2, 2.5, or whatever matches your door pitch
-
-
-    // ───────────────────────────────── Flow / Variety ───────────────────────────
     [Header("Flow / Variety")]
-    [SerializeField, Range(0f, 1f)] private float preferTurnBias = 0.35f;
-    [Tooltip("If > 0, the first few placements will try to include at least one turn.")]
-    [SerializeField, Min(0)] private int forceFirstTurnWithin = 3;
-    [SerializeField, Min(1)] private int frontierShuffleWindow = 4;
+    [Min(0)] public int corridorFirstSteps = 14;
+    [Min(0)] public int minHallsBetweenRooms = 7;
+    [Range(0, 1f)] public float preferTurnBias = 0.55f;
+    [Min(0)] public int maxConsecutiveSamePrefab = 2;
+    [Min(0)] public int maxConsecutiveSameCategory = 4;
+    public float hallwayClearance = 1.0f;
 
-    [Header("Anti-Repeat Limits")]
-    [SerializeField, Min(0)] private int maxConsecutiveSamePrefab = 2;
-    [SerializeField, Min(0)] private int maxConsecutiveSameCategory = 0;
-    [SerializeField, Min(0)] private int maxConsecutiveStraight = 3;
+    [Header("Room Limits")]
+    public int maxRoomsPlaced = 12;      // non-hall count
+    [Range(0f, 1f)] public float roomSpawnChance = 0.35f;
 
-    // ───────────────────────────────── Corridor-First ───────────────────────────
-    [Header("Corridor-First")]
-    [Tooltip("First N placements (after the Start) must be Hallway pieces.")]
-    [SerializeField, Min(0)] private int corridorFirstSteps = 10;
+    [Header("Door Capping (visual)")]
+    public GameObject doorCapPrefab;
+    [Min(0f)] public float doorCapDepth = 0.10f;
+    public bool sealOpenAnchorsAtEnd = true;
 
-    [Tooltip("After placing a Room, require this many Hallways before another Room.")]
-    [SerializeField, Min(0)] private int minHallsBetweenRooms = 2;
-
-    [Tooltip("Extra score to prefer snaking/turning halls during corridor/spacing.")]
-    [SerializeField, Range(0f, 1.5f)] private float hallwayContinueBias = 0.45f;
-
-    [Tooltip("Extra pruning distance after placing a Hallway to avoid door spam nearby.")]
-    [SerializeField, Min(0f)] private float hallwayClearance = 0.8f;
-
-
-    // ───────────────────────────────── Overlap & Bounds ─────────────────────────
-    [Header("Overlap Check")]
-    [Tooltip("Set this to your 'LevelGeo' (RoomBounds) layer ONLY.")]
-    [SerializeField] private LayerMask placementCollisionMask;
-
-    [Header("Portal Overlap Allowance")]
-    [Tooltip("Allow a thin slab of overlap right at the connecting doorway.")]
-    [SerializeField] private bool allowPortalOverlap = true;
-
-    [Tooltip("Doorway seam allowance width x height (meters).")]
-    [SerializeField] private Vector2 portalSize = new Vector2(2.4f, 2.4f);
-
-    [Tooltip("Seam depth allowed for overlap (meters).")]
-    [SerializeField] private float portalSlabThickness = 0.10f;
-
-    [Header("Spacing / Clearance")]
-    [Tooltip("Global additional padding when pruning nearby open anchors after placement.")]
-    [SerializeField, Min(0f)] private float globalClearancePadding = 0f;
-
-    // ───────────────────────────────── Optional Door Caps ───────────────────────
-    [Header("Unused Door Sealing (optional)")]
-    [SerializeField] private GameObject doorBlockerPrefab;
-    // ---- Door cap options (editor) ----
-    [SerializeField] private GameObject doorCapPrefab;  // assign a thin plug/cap prefab in Inspector
-    [SerializeField, Min(0f)] private float doorCapDepth = 0.10f; // thickness of the cap in meters
-    [SerializeField] private bool sealOpenAnchorsAtEnd = true;     // auto-cap any leftover open doors
-
-    // ───────────────────────────────── Debug / Info ─────────────────────────────
     [Header("Debug")]
-    [SerializeField] private bool logSteps = false;
-    [SerializeField] private bool drawGizmos = true;
-    [SerializeField] private bool verboseSelection = false;
-    [SerializeField] private bool disableOverlapForDebug = false;
+    public bool verboseSelection = false;
+    public bool logSteps = true;
 
-    [Header("Runtime (info)")]
-    [SerializeField] private int usedSeed = 0;
-    public GameObject StartInstance { get; private set; }
+    // internals
+    private System.Random _rng;
+    private int _usedSeed;
+    private readonly List<GameObject> _spawned = new List<GameObject>();
+    private readonly List<DoorAnchor> _open = new List<DoorAnchor>();
+    private readonly Dictionary<GameObject, int> _spawnCounts = new Dictionary<GameObject, int>();
+    private readonly List<Bounds> _placedAabbs = new List<Bounds>();
+    private readonly Dictionary<GameObject, Bounds> _prefabAabb = new Dictionary<GameObject, Bounds>();
 
-    // ───────────────────────────────── Runtime state ────────────────────────────
-    private System.Random rng;
-    private readonly List<DoorAnchor> openAnchors = new();
-    private readonly HashSet<DoorAnchor> usedAnchors = new();
-    private readonly List<GameObject> spawnedRooms = new();
+    private int _hallsSinceRoom = 0, _corridorStepsLeft = 0, _nonHallCount = 0;
+    private int _samePrefab = 0, _sameCat = 0; private GameObject _lastPrefab; private RoomCategory _lastCat = RoomCategory.None;
 
-    private readonly Dictionary<GameObject, int> _spawnCounts = new();
-    private int _placedSummonRooms = 0;
-    private int _stepsSinceRoom = 999; // halls since last room; start high
+    private static readonly List<Collider> _tmpWorldCols = new List<Collider>(256);
 
-    private GameObject _lastPrefabAsset = null; private int _lastPrefabRun = 0;
-    private RoomCategory _lastCategory = RoomCategory.None; private int _lastCategoryRun = 0;
-    private int _straightStreak = 0;
-    private Vector3 lastGrowthDir = Vector3.zero;
+    private void Awake() { if (!levelRoot) levelRoot = transform; }
+    private void Start() { if (autoGenerateOnPlay) Generate(); }
 
-    private const int OverlapCache = 64;
-    private static readonly Collider[] overlapHits = new Collider[OverlapCache];
-
-    // ───────────────────────────────── Unity ────────────────────────────────────
-    void Awake()
-    {
-        if (!Validate()) { enabled = false; return; }
-        if (!levelRoot)
-        {
-            var go = new GameObject("LevelRoot");
-            levelRoot = go.transform;
-        }
-    }
-
-    void Start()
-    {
-        if (autoGenerateOnPlay) { ClearLevel(); Generate(); }
-    }
-
-    void Update()
-    {
-        if (Application.isPlaying && Input.GetKeyDown(KeyCode.R))
-        {
-            ClearLevel(); Generate();
-        }
-    }
-
-    // ───────────────────────────────── API ──────────────────────────────────────
-    [ContextMenu("Generate Now")]
     public void Generate()
     {
         ClearLevel();
         InitRng();
 
-        // Start room
-        StartInstance = Instantiate(startRoomPrefab, levelRoot);
-        ForceUnitScale(StartInstance.transform);
-        StartInstance.SetActive(true);
-        spawnedRooms.Add(StartInstance);
-        AddRoomAnchorsToOpenList(StartInstance, null);
+        // start
+        GameObject start = Instantiate(startRoomPrefab, levelRoot);
+        start.name = "StartRoom(Clone)";
+        AlignYawTo30(start.transform);
+        SnapToLatticeAtFirstAnchor(start);
+        Register(start);
+        PushAnchorsFrom(start);
 
-        if (logSteps) Debug.Log($"[Gen] Start placed. Open anchors = {openAnchors.Count}, Seed={usedSeed}");
+        _corridorStepsLeft = Mathf.Max(0, corridorFirstSteps);
+        _hallsSinceRoom = 0;
 
-        int roomsPlaced = 1;
-        int fails = 0;
-        lastGrowthDir = Vector3.zero;
-        _straightStreak = 0;
-        _lastPrefabAsset = null; _lastPrefabRun = 0;
-        _lastCategory = RoomCategory.None; _lastCategoryRun = 0;
-
-        int safety = maxRooms * maxPlacementAttemptsPerRoom * 3;
-
-        while (roomsPlaced < maxRooms && openAnchors.Count > 0 && safety-- > 0)
+        while (_spawned.Count < maxRooms && _open.Count > 0)
         {
-            int window = Mathf.Min(frontierShuffleWindow, openAnchors.Count);
-            int idx = (window <= 1) ? 0 : rng.Next(window);
-            var target = openAnchors[idx];
-            openAnchors.RemoveAt(idx);
-            if (!target || usedAnchors.Contains(target)) continue;
+            var target = PopOpenAnchor();
+            if (!target) continue;
 
-            if (logSteps) Debug.Log($"[Gen] Try anchor '{target.name}'   OA:{openAnchors.Count}   Rooms:{spawnedRooms.Count}");
-
-            if (TryAttachRoomAt(target, ref roomsPlaced))
-            {
-                fails = 0;
-            }
-            else
-            {
-                if (++fails > maxPlacementAttemptsPerRoom * 2) break;
-            }
+            if (!TryAttachAt(target))
+                PlaceDoorCapAt(target);
         }
 
-        // Optional: cap unused
-        if (doorBlockerPrefab)
+        if (sealOpenAnchorsAtEnd)
         {
-            foreach (var a in openAnchors)
-            {
-                if (!a || usedAnchors.Contains(a)) continue;
-                PlaceBlockerAt(a);
-            }
+            for (int i = _open.Count - 1; i >= 0; i--) PlaceDoorCapAt(_open[i]);
+            _open.Clear();
         }
 
-        BakeNavMeshIfReady();
-        if (logSteps) Debug.Log($"[Gen] Done. Spawned={spawnedRooms.Count}, Open={openAnchors.Count}, Seed={usedSeed}");
+        if (logSteps) Debug.Log($"[Gen] Done. Spawned={_spawned.Count}, Seed={_usedSeed}");
+        TryBakeNavMesh();
     }
 
-    // ───────────────────────────────── Core ─────────────────────────────────────
-    private bool TryAttachRoomAt(DoorAnchor targetAnchor, ref int roomsPlaced)
+    public void ClearLevel()
     {
-        bool mustTurn = false;
-        if (forceFirstTurnWithin > 0 && spawnedRooms.Count <= forceFirstTurnWithin)
-            mustTurn = (lastGrowthDir != Vector3.zero);
+        for (int i = levelRoot.childCount - 1; i >= 0; i--) DestroyImmediate(levelRoot.GetChild(i).gameObject);
+        _spawned.Clear(); _open.Clear(); _spawnCounts.Clear(); _placedAabbs.Clear();
+        _hallsSinceRoom = 0; _corridorStepsLeft = 0; _nonHallCount = 0;
+        _lastPrefab = null; _lastCat = RoomCategory.None; _samePrefab = _sameCat = 0;
+    }
 
-        bool corridorPhase = (spawnedRooms.Count - 1) < corridorFirstSteps;
-        bool enforceRoomSpacing = (_stepsSinceRoom < minHallsBetweenRooms);
+    private void InitRng()
+    {
+        _usedSeed = (randomizeSeed || seedInput == 0) ? Random.Range(int.MinValue, int.MaxValue) : seedInput;
+        _rng = new System.Random(_usedSeed);
+        if (logSteps) Debug.Log($"[Gen] Seed = {_usedSeed}");
+    }
 
-        const int samples = 8;
-        GameObject bestAsset = null; GameObject bestGhost = null; DoorAnchor bestDoor = null;
-        float bestScore = float.NegativeInfinity; float bestTurn = 0f;
+    // ---------- placement ----------
+    private bool TryAttachAt(DoorAnchor target)
+    {
+        var prefab = PickNextPrefabFor(target);
+        if (!prefab) return false;
 
-        for (int s = 0; s < samples; s++)
-        {
-            var prefabAsset = PickNextPrefabFor(targetAnchor);
-            if (!prefabAsset) break;
+        GameObject ghost = Instantiate(prefab);
+        ghost.hideFlags = HideFlags.HideAndDontSave;
 
-            // hard anti-repeat
-            if (maxConsecutiveSamePrefab > 0 && _lastPrefabAsset == prefabAsset && _lastPrefabRun >= maxConsecutiveSamePrefab) continue;
-            var metaAsset = prefabAsset.GetComponent<RoomMeta>();
-            if (metaAsset && maxConsecutiveSameCategory > 0 && _lastCategory == metaAsset.category && _lastCategoryRun >= maxConsecutiveSameCategory) continue;
+        var doors = ghost.GetComponentsInChildren<DoorAnchor>(true);
+        if (doors.Length == 0) { DestroyImmediate(ghost); return false; }
+        DoorAnchor door = doors[_rng.Next(doors.Length)];
 
-            // spawn ghost (inactive)
-            var ghost = Instantiate(prefabAsset, levelRoot);
-            ghost.SetActive(false);
-            ForceUnitScale(ghost.transform);
+        // align + snap
+        HardAlignAt(ghost, door, target);
+        AlignYawTo30(ghost.transform);
+        if (snapPosToLattice) SnapByAnchor(ghost, door, target);
 
-            if (!HasBoundsOnMask(ghost))
-            {
-                if (verboseSelection) Debug.LogWarning($"[Gen] REJECT {ghost.name}: no LevelGeo bounds. Add TRIGGER BoxCollider(s) on LevelGeo.");
-                DestroyImmediate(ghost); continue;
-            }
+        // fast AABB precheck
+        var localAabb = GetPrefabAabb(prefab);
+        var worldAabb = ToWorldAabb(localAabb, ghost.transform, 0.05f);
+        for (int k = 0; k < _placedAabbs.Count; k++)
+            if (worldAabb.Intersects(_placedAabbs[k])) { DestroyImmediate(ghost); return false; }
 
-            var door = ChooseBestAnchor(ghost, targetAnchor);
-            if (!door)
-            {
-                if (verboseSelection) Debug.LogWarning($"[Gen] REJECT {ghost.name}: no door anchors found.");
-                DestroyImmediate(ghost); continue;
-            }
+        // precise overlap with door seam allowance
+        if (!disableOverlapForDebug && OverlapsExistingAllowPortal(ghost, target, door))
+        { DestroyImmediate(ghost); return false; }
 
+        // commit
+        ghost.hideFlags = HideFlags.None; ghost.transform.SetParent(levelRoot, true);
+        Register(ghost);
+        _placedAabbs.Add(ToWorldAabb(localAabb, ghost.transform, 0.02f));
 
+        var meta = prefab.GetComponent<RoomMeta>();
+        bool placedHall = (meta && meta.category == RoomCategory.Hallway);
+        if (placedHall) { _hallsSinceRoom++; if (_corridorStepsLeft > 0) _corridorStepsLeft--; }
+        else { _hallsSinceRoom = 0; _nonHallCount++; }
 
-            // Non-unit scale on anchor parents can break alignment (tolerant ~1)
-            Vector3 ls1 = door.transform.lossyScale;
-            Vector3 ls2 = targetAnchor.transform.lossyScale;
-            bool approxOne(Vector3 v) => Mathf.Abs(v.x - 1f) < 0.001f && Mathf.Abs(v.y - 1f) < 0.001f && Mathf.Abs(v.z - 1f) < 0.001f;
-            if (!approxOne(ls1) || !approxOne(ls2))
-            {
-                if (verboseSelection) Debug.LogWarning($"[Gen] REJECT {ghost.name}: anchor parent scale not ~1 (door {ls1}, target {ls2}). Ensure all parents are (1,1,1).");
-                DestroyImmediate(ghost); continue;
-            }
+        PushAnchorsFrom(ghost, door);
+        _open.Remove(target);
 
-            // NEW:
-            HardAlignRoomAtAnchor(ghost, door, targetAnchor);
-            SnapToGrid(ghost.transform);
+        float pad = (meta ? meta.clearancePadding : 0f);
+        if (pad > 0f) PruneAnchorsNear(CompositeBounds(ghost), pad, ghost.transform);
+        if (placedHall && hallwayClearance > 0f) PruneAnchorsNear(CompositeBounds(ghost), hallwayClearance, ghost.transform);
 
-
-            // Overlap check (robust, with door seam allowance)
-            bool blocked = !disableOverlapForDebug
-              && OverlapsExisting_PenetrationAllowPortal(ghost, targetAnchor, door);
-            if (blocked)
-            {
-                if (verboseSelection) Debug.LogWarning($"[Gen] REJECT {ghost.name}: overlap with existing LevelGeo (outside portal seam).");
-                DestroyImmediate(ghost); continue;
-            }
-
-
-            // scoring
-            float turn = ComputeTurnScore(targetAnchor, door);
-            if (mustTurn && turn < 0.2f) { DestroyImmediate(ghost); continue; }
-            if (maxConsecutiveStraight > 0 && _straightStreak >= maxConsecutiveStraight && turn < 0.2f)
-            { DestroyImmediate(ghost); continue; }
-
-            float score = 0f;
-            if (preferTurnBias > 0f) score += turn * preferTurnBias;
-
-            // Corridor-first: encourage snaking halls during corridor phase / spacing window
-            bool candidateIsHall = metaAsset && metaAsset.category == RoomCategory.Hallway;
-            if ((corridorPhase || enforceRoomSpacing) && candidateIsHall)
-            {
-                score += hallwayContinueBias * Mathf.Lerp(0.25f, 1f, turn); // prefer slight turns to make “S” shapes
-            }
-
-            // Avoid immediate 180° backtrack
-            Vector3 inDir = targetAnchor.transform.forward.normalized;
-            Vector3 outDir = (-door.transform.forward).normalized;
-            float backDot = Vector3.Dot(inDir, outDir); // +1 straight, -1 back
-            if (backDot < -0.95f) score -= 0.5f;
-
-            // Favor more-degree nodes a tiny bit (branch potential)
-            int doorsCount = ghost.GetComponentsInChildren<DoorAnchor>(true).Length;
-            if (doorsCount > 2) score += 0.05f * (doorsCount - 2);
-
-            // mild anti-repeat
-            if (_lastPrefabAsset == prefabAsset) score -= 0.05f;
-            if (metaAsset && _lastCategory == metaAsset.category) score -= 0.03f;
-
-            if (score > bestScore)
-            {
-                if (bestGhost) DestroyImmediate(bestGhost);
-                bestAsset = prefabAsset; bestGhost = ghost; bestDoor = door; bestScore = score; bestTurn = turn;
-            }
-            else DestroyImmediate(ghost);
-        }
-
-        if (!bestGhost) return false;
-
-        // accept
-        bestGhost.SetActive(true);
-        spawnedRooms.Add(bestGhost);
-        usedAnchors.Add(targetAnchor);
-        usedAnchors.Add(bestDoor);
-        roomsPlaced++;
-        lastGrowthDir = targetAnchor.transform.forward.normalized;
-
-        AddRoomAnchorsToOpenList(bestGhost, bestDoor);
-
-        if (!_spawnCounts.ContainsKey(bestAsset)) _spawnCounts[bestAsset] = 0;
-        _spawnCounts[bestAsset]++;
-
-        var metaPlaced = bestGhost.GetComponent<RoomMeta>();
-        if (metaPlaced && metaPlaced.category == RoomCategory.Summon) _placedSummonRooms++;
-
-        _lastPrefabRun = (_lastPrefabAsset == bestAsset) ? _lastPrefabRun + 1 : 1;
-        _lastPrefabAsset = bestAsset;
-        if (metaPlaced)
-        {
-            _lastCategoryRun = (_lastCategory == metaPlaced.category) ? _lastCategoryRun + 1 : 1;
-            _lastCategory = metaPlaced.category;
-        }
-        _straightStreak = (bestTurn < 0.2f) ? _straightStreak + 1 : 0;
-
-        // spacing counter: Halls increment, Rooms reset
-        bool placedIsHall = metaPlaced && metaPlaced.category == RoomCategory.Hallway;
-        _stepsSinceRoom = placedIsHall ? (_stepsSinceRoom + 1) : 0;
-
-        // clearance pruning — do NOT prune anchors that belong to the room we just placed
-        float pad = globalClearancePadding + (metaPlaced ? metaPlaced.clearancePadding : 0f);
-        if (pad > 0f)
-        {
-            Bounds b = GetCompositeBounds(bestGhost);
-            if (b.size != Vector3.zero) PruneAnchorsNear(b, pad, bestGhost.transform);
-        }
-
-        // extra prune around halls to discourage door spam near corridors
-        if (placedIsHall && hallwayClearance > 0f)
-        {
-            Bounds hb = GetCompositeBounds(bestGhost);
-            if (hb.size != Vector3.zero) PruneAnchorsNear(hb, hallwayClearance, bestGhost.transform);
-        }
-
-        if (logSteps) Debug.Log($"[Gen] ACCEPT '{bestGhost.name}'. OA now:{openAnchors.Count}");
+        if (logSteps) Debug.Log($"[Gen] ACCEPT '{prefab.name}'. Rooms:{_spawned.Count}");
         return true;
-
     }
 
     private GameObject PickNextPrefabFor(DoorAnchor target)
     {
-        // Local gates for this pick
-        bool corridorPhase = (spawnedRooms.Count - 1) < corridorFirstSteps; // Start not counted
-        bool enforceRoomSpacing = (_stepsSinceRoom < minHallsBetweenRooms);
-
-        GameObject PickWithGate(bool hallsOnly, out string dump)
+        float total = 0f; var bag = new List<(GameObject p, float w)>();
+        foreach (var p in roomPrefabs)
         {
-            float total = 0f;
-            var bag = new List<(GameObject p, float w)>();
-            System.Text.StringBuilder sb = verboseSelection ? new System.Text.StringBuilder() : null;
+            if (!p) continue;
+            var m = p.GetComponent<RoomMeta>(); if (!m) continue;
 
-            for (int i = 0; i < roomPrefabs.Count; i++)
+            _spawnCounts.TryGetValue(p, out int used);
+            if (m.uniqueOnce && used > 0) continue;
+            if (m.maxCount > 0 && used >= m.maxCount) continue;
+
+            if (!m.connectsAll && (target.allowedTargets & m.category) == 0) continue;
+
+            bool needHall = (_corridorStepsLeft > 0) || (_hallsSinceRoom < minHallsBetweenRooms);
+            if (needHall && m.category != RoomCategory.Hallway) continue;
+
+            if (m.category != RoomCategory.Hallway)
             {
-                var p = roomPrefabs[i]; if (!p) continue;
-                var meta = p.GetComponent<RoomMeta>(); if (!meta) continue;
-
-                // corridor/spacing gate → only Hallways allowed
-                if (hallsOnly && meta.category != RoomCategory.Hallway)
-                { if (sb != null) sb.AppendLine($"REJECT {p.name}: not Hallway (phase/spacing)"); continue; }
-
-                _spawnCounts.TryGetValue(p, out int used);
-                if (meta.uniqueOnce && used > 0) { if (sb != null) sb.AppendLine($"REJECT {p.name}: uniqueOnce"); continue; }
-                if (meta.maxCount > 0 && used >= meta.maxCount) { if (sb != null) sb.AppendLine($"REJECT {p.name}: maxCount"); continue; }
-                if (!meta.connectsAll && (target.allowedTargets & meta.category) == 0)
-                { if (sb != null) sb.AppendLine($"REJECT {p.name}: disallowed by target"); continue; }
-                if (meta.category == RoomCategory.Summon && _placedSummonRooms >= 1)
-                { if (sb != null) sb.AppendLine($"REJECT {p.name}: summon limit"); continue; }
-
-                float w = Mathf.Max(0.0001f, meta.weight);
-                total += w; bag.Add((p, w));
+                if (_nonHallCount >= maxRoomsPlaced) continue;
+                if (_rng.NextDouble() > roomSpawnChance) continue;
             }
 
-            if (bag.Count == 0) { dump = sb?.ToString() ?? ""; return null; }
+            float w = Mathf.Max(0.0001f, m.weight);
 
-            float r = (float)rng.NextDouble() * total;
-            foreach (var (p, w) in bag) { if ((r -= w) <= 0f) { dump = sb?.ToString() ?? ""; return p; } }
-            dump = sb?.ToString() ?? "";
-            return bag[bag.Count - 1].p;
+            if (_lastPrefab == p && _samePrefab >= maxConsecutiveSamePrefab) w *= 0.1f;
+            if (_lastCat == m.category && _sameCat >= maxConsecutiveSameCategory) w *= 0.25f;
+
+            total += w; bag.Add((p, w));
         }
+        if (bag.Count == 0) return null;
 
-        bool hallsOnly = (corridorPhase || enforceRoomSpacing);
-        string debugDump;
-        var pick = PickWithGate(hallsOnly, out debugDump);
+        float r = (float)_rng.NextDouble() * total;
+        foreach (var (p, w) in bag) { r -= w; if (r <= 0f) return Choose(p); }
+        return Choose(bag[bag.Count - 1].p);
 
-        // fail-safe: if no Halls fit, allow Rooms this pick so we don’t stall
-        if (!pick && hallsOnly)
+        GameObject Choose(GameObject p)
         {
-            if (verboseSelection)
-                Debug.LogWarning($"[Gen] Corridor/spacing gate yielded 0 candidates at '{target.name}'. Allowing rooms this time.\n{debugDump}");
-            pick = PickWithGate(false, out debugDump);
-        }
-
-        if (!pick && verboseSelection)
-            Debug.LogWarning($"[Gen] No eligible prefabs for '{target.name}'.\n{debugDump}");
-
-        return pick;
-    }
-
-    private DoorAnchor ChooseBestAnchor(GameObject roomInstance, DoorAnchor target)
-    {
-        var anchors = roomInstance.GetComponentsInChildren<DoorAnchor>(true);
-        if (anchors == null || anchors.Length == 0) return null;
-
-        // Pick the anchor whose forward is MOST opposite to the target (best dot with -target.forward).
-        DoorAnchor best = null; float bestDot = -2f;
-        Vector3 need = -target.transform.forward.normalized;
-        for (int i = 0; i < anchors.Length; i++)
-        {
-            var a = anchors[i]; if (!a || usedAnchors.Contains(a)) continue;
-            float d = Vector3.Dot(a.transform.forward.normalized, need);
-            if (d > bestDot) { bestDot = d; best = a; }
-        }
-        return best;
-    }
-
-
-    private void AlignRoom(GameObject room, DoorAnchor roomAnchor, DoorAnchor target)
-    {
-        Quaternion rot = Quaternion.FromToRotation(roomAnchor.transform.forward, -target.transform.forward);
-        room.transform.rotation = rot * room.transform.rotation;
-        room.transform.position += target.transform.position - roomAnchor.transform.position;
-        room.transform.position += target.transform.position - roomAnchor.transform.position;
-
-        if (enableGridSnap)
-        {
-            Vector3 p = room.transform.position;
-            p.x = Mathf.Round(p.x / gridSize) * gridSize;
-            p.z = Mathf.Round(p.z / gridSize) * gridSize;
-            room.transform.position = p;
+            var m = p.GetComponent<RoomMeta>();
+            if (_lastPrefab == p) _samePrefab++; else { _lastPrefab = p; _samePrefab = 1; }
+            if (_lastCat == m.category) _sameCat++; else { _lastCat = m.category; _sameCat = 1; }
+            return p;
         }
     }
 
-    private void AddRoomAnchorsToOpenList(GameObject room, DoorAnchor exclude)
+    private void Register(GameObject inst)
     {
-        bool corridorPhase = (spawnedRooms.Count - 1) < corridorFirstSteps;
+        _spawned.Add(inst);
+        var meta = inst.GetComponent<RoomMeta>();
+        GameObject key = null;
+        foreach (var pf in roomPrefabs) if (pf && pf.name == inst.name.Replace("(Clone)", "").Trim()) { key = pf; break; }
+        if (key) _spawnCounts[key] = _spawnCounts.TryGetValue(key, out int c) ? c + 1 : 1;
+    }
 
-        var arr = room.GetComponentsInChildren<DoorAnchor>(true);
-        for (int i = 0; i < arr.Length; i++)
+    private void PushAnchorsFrom(GameObject inst, DoorAnchor except = null)
+    {
+        foreach (var a in inst.GetComponentsInChildren<DoorAnchor>(true))
+            if (a && a != except) _open.Add(a);
+    }
+
+    private DoorAnchor PopOpenAnchor()
+    {
+        if (_open.Count == 0) return null;
+        return _open[_rng.Next(_open.Count)];
+    }
+
+    // ---------- alignment & lattice ----------
+    private void HardAlignAt(GameObject ghost, DoorAnchor door, DoorAnchor target)
+    {
+        Quaternion rot = Quaternion.FromToRotation(door.transform.forward, -target.transform.forward);
+        ghost.transform.rotation = rot * ghost.transform.rotation;
+        Vector3 delta = target.transform.position - door.transform.position;
+        ghost.transform.position += delta;
+    }
+
+    private void AlignYawTo30(Transform t)
+    {
+        if (!snapYawTo30) return;
+        var e = t.eulerAngles; float snapped = Mathf.Round(e.y / 30f) * 30f;
+        t.rotation = Quaternion.Euler(0f, snapped, 0f);
+    }
+
+    private void SnapByAnchor(GameObject ghost, DoorAnchor usedDoor, DoorAnchor target)
+    {
+        var anchors = ghost.GetComponentsInChildren<DoorAnchor>(true); if (anchors.Length == 0) return;
+        Vector3 acc = Vector3.zero; int cnt = 0;
+        foreach (var a in anchors)
         {
-            var a = arr[i]; if (!a || a == exclude) continue;
-            if (usedAnchors.Contains(a)) continue;
-
-            if (corridorPhase) openAnchors.Insert(0, a); // depth-first during corridor phase
-            else openAnchors.Add(a);
+            if (a == usedDoor) continue;
+            Vector3 snapped = NearestLatticePoint(a.transform.position);
+            acc += (snapped - a.transform.position); cnt++;
         }
+        if (cnt > 0) ghost.transform.position += new Vector3(acc.x / cnt, 0f, acc.z / cnt);
+        Vector3 fix = target.transform.position - usedDoor.transform.position;
+        ghost.transform.position += new Vector3(fix.x, 0f, fix.z);
     }
 
-    private void PlaceBlockerAt(DoorAnchor a)
+    private void SnapToLatticeAtFirstAnchor(GameObject inst)
     {
-        if (!doorBlockerPrefab || !a) return;
-        var b = Instantiate(doorBlockerPrefab, a.transform.position, a.transform.rotation, levelRoot);
-        b.transform.position += a.transform.forward * 0.01f;
+        if (!snapPosToLattice) return;
+        var a = inst.GetComponentInChildren<DoorAnchor>(true); if (!a) return;
+        Vector3 p = a.transform.position; Vector3 s = NearestLatticePoint(p);
+        Vector3 d = s - p; inst.transform.position += new Vector3(d.x, 0f, d.z);
     }
 
-    private void ForceUnitScale(Transform t) => t.localScale = Vector3.one;
-
-    // ───────────────────────────────── Overlap helpers ──────────────────────────
-    private bool HasBoundsOnMask(GameObject go)
+    private Vector3 NearestLatticePoint(Vector3 world)
     {
-        var cols = go.GetComponentsInChildren<Collider>(true);
-        foreach (var c in cols)
+        Vector2 p = new Vector2(world.x, world.z);
+        Vector2 a = new Vector2(cellSize, 0f);
+        Vector2 b = new Vector2(0.5f * cellSize, 0.86602540378f * cellSize); // cos30,sin30
+
+        float det = a.x * b.y - a.y * b.x; // > 0
+        Vector2 inv0 = new Vector2(b.y / det, -b.x / det);
+        Vector2 inv1 = new Vector2(-a.y / det, a.x / det);
+
+        float i = inv0.x * p.x + inv0.y * p.y;
+        float j = inv1.x * p.x + inv1.y * p.y;
+
+        int ri = Mathf.RoundToInt(i), rj = Mathf.RoundToInt(j);
+        Vector2 snapped = ri * a + rj * b;
+        return new Vector3(snapped.x, world.y, snapped.y);
+    }
+
+    // ---------- overlap guards ----------
+    private bool OverlapsExistingAllowPortal(GameObject cand, DoorAnchor targetAnchor, DoorAnchor candDoor)
+    {
+        var candCols = cand.GetComponentsInChildren<Collider>(true);
+        if (candCols == null || candCols.Length == 0) return false;
+
+        bool anyOnMask = false;
+        foreach (var c in candCols)
+            if (c && c.enabled && ((placementCollisionMask.value & (1 << c.gameObject.layer)) != 0)) { anyOnMask = true; break; }
+        if (!anyOnMask) return true;
+
+        _tmpWorldCols.Clear();
+        foreach (var r in _spawned)
         {
-            if (!c || !c.enabled) continue;
-            if ((placementCollisionMask.value & (1 << c.gameObject.layer)) == 0) continue;
-            return true;
+            if (!r) continue;
+            foreach (var wc in r.GetComponentsInChildren<Collider>(true))
+                if (wc && wc.enabled && ((placementCollisionMask.value & (1 << wc.gameObject.layer)) != 0)) _tmpWorldCols.Add(wc);
+        }
+
+        Vector3 n = targetAnchor.transform.forward.normalized;
+        Vector3 center = targetAnchor.transform.position;
+        Vector3 right = Vector3.Cross(Vector3.up, n).normalized;
+        float halfW = portalSize.x * 0.5f, halfH = portalSize.y * 0.5f, halfT = portalSlabThickness * 0.5f;
+
+        bool InPortal(Vector3 p)
+        {
+            float d = Vector3.Dot(p - center, n);
+            if (Mathf.Abs(d) > halfT) return false;
+            Vector3 inPlane = p - d * n;
+            float rx = Vector3.Dot(inPlane - center, right);
+            float uy = Vector3.Dot(inPlane - center, Vector3.up);
+            return Mathf.Abs(rx) <= halfW && Mathf.Abs(uy) <= halfH;
+        }
+
+        foreach (var a in candCols)
+        {
+            if (!a || !a.enabled || ((placementCollisionMask.value & (1 << a.gameObject.layer)) == 0)) continue;
+            Vector3 pa = a.transform.position; Quaternion qa = a.transform.rotation;
+
+            foreach (var b in _tmpWorldCols)
+            {
+                if (!b) continue;
+                Vector3 pb = b.transform.position; Quaternion qb = b.transform.rotation;
+                if (Physics.ComputePenetration(a, pa, qa, b, pb, qb, out _, out _))
+                {
+                    if (allowPortalOverlap && InPortal(pa)) continue;
+                    return true;
+                }
+            }
         }
         return false;
     }
 
-    // === STRONG OVERLAP CHECK ===
-    // Allows only a thin "portal slab" at the target door; blocks all other intersections.
-    private bool OverlapsExisting_PenetrationAllowPortal(GameObject candidate, DoorAnchor targetAnchor, DoorAnchor candDoor)
+    private Bounds CompositeBounds(GameObject go)
     {
-        // Gather candidate colliders on the placementCollisionMask (LevelGeo triggers)
-        var candCols = candidate.GetComponentsInChildren<Collider>(true);
-        if (candCols == null || candCols.Length == 0) return false;
-
-        // Fast reject: if none of candidate colliders are on the mask, treat as no-overlap protection (fail safe)
-        bool candOnMask = false;
-        foreach (var c in candCols)
-            if (c && c.enabled && ((placementCollisionMask.value & (1 << c.gameObject.layer)) != 0))
-            { candOnMask = true; break; }
-        if (!candOnMask) return true; // candidate has no LevelGeo bounds -> block
-
-        // Build world colliders list
-        tempWorldCols.Clear();
-        for (int i = 0; i < spawnedRooms.Count; i++)
+        Bounds b = new Bounds(Vector3.zero, Vector3.zero); bool inited = false;
+        foreach (var c in go.GetComponentsInChildren<Collider>(true))
         {
-            var r = spawnedRooms[i]; if (!r) continue;
-            var cols = r.GetComponentsInChildren<Collider>(true);
-            for (int k = 0; k < cols.Length; k++)
-            {
-                var wc = cols[k];
-                if (wc && wc.enabled && ((placementCollisionMask.value & (1 << wc.gameObject.layer)) != 0))
-                    tempWorldCols.Add(wc);
-            }
+            if (!c || ((placementCollisionMask.value & (1 << c.gameObject.layer)) == 0)) continue;
+            if (!inited) { b = c.bounds; inited = true; } else b.Encapsulate(c.bounds);
         }
-
-        // Define the allowed portal slab at the target doorway
-        //   Centered at targetAnchor, normal = targetAnchor.forward
-        Vector3 portalN = targetAnchor.transform.forward.normalized;
-        Vector3 portalCenter = targetAnchor.transform.position;
-        Vector3 portalRight = Vector3.Cross(Vector3.up, portalN).normalized;     // local X in the door plane
-        Vector3 portalUp = Vector3.up;                                         // assuming flat floors
-        float halfW = portalSize.x * 0.5f;
-        float halfH = portalSize.y * 0.5f;
-        float halfT = portalSlabThickness * 0.5f;
-
-        bool InPortalSlab(Vector3 p)
-        {
-            // Signed distance from door plane
-            float d = Vector3.Dot(p - portalCenter, portalN);
-            if (Mathf.Abs(d) > halfT) return false;
-
-            // Project into the plane and check rectangle
-            Vector3 inPlane = p - d * portalN;
-            float rx = Vector3.Dot(inPlane - portalCenter, portalRight);
-            float uy = Vector3.Dot(inPlane - portalCenter, portalUp);
-            return Mathf.Abs(rx) <= halfW && Mathf.Abs(uy) <= halfH;
-        }
-
-        // Check each candidate collider against each world collider
-        for (int i = 0; i < candCols.Length; i++)
-        {
-            var a = candCols[i];
-            if (!a || !a.enabled || ((placementCollisionMask.value & (1 << a.gameObject.layer)) == 0)) continue;
-
-            Vector3 pa = a.transform.position; Quaternion qa = a.transform.rotation;
-            for (int j = 0; j < tempWorldCols.Count; j++)
-            {
-                var b = tempWorldCols[j]; if (!b) continue;
-                Vector3 pb = b.transform.position; Quaternion qb = b.transform.rotation;
-
-                // If they penetrate, allow only if the contact point lies inside the portal slab
-                Vector3 dir; float dist;
-                if (Physics.ComputePenetration(a, pa, qa, b, pb, qb, out dir, out dist))
-                {
-                    // Find a representative point inside candidate that is closest to B along penetration dir
-                    // (approx) use candidate collider position; if that’s not in slab, count as blocked.
-                    Vector3 contactApprox = pa; // cheap but effective for our doorway slab
-                    if (allowPortalOverlap && InPortalSlab(contactApprox))
-                        continue; // allowed small portal overlap
-                    return true; // BLOCK
-                }
-            }
-        }
-        return false; // no illegal overlaps
+        return b;
     }
 
-    // temp list to avoid GC
-    private static readonly List<Collider> tempWorldCols = new List<Collider>(256);
-
-
-    private List<Collider> GetWorldBoundsColliders()
+    private Bounds GetPrefabAabb(GameObject prefab)
     {
-        var list = new List<Collider>(128);
-        for (int r = 0; r < spawnedRooms.Count; r++)
-        {
-            var room = spawnedRooms[r]; if (!room) continue;
-            var cols = room.GetComponentsInChildren<Collider>(true);
-            for (int i = 0; i < cols.Length; i++)
-            {
-                var c = cols[i]; if (!c || !c.enabled) continue;
-                if ((placementCollisionMask.value & (1 << c.gameObject.layer)) == 0) continue;
-                list.Add(c);
-            }
-        }
-        return list;
-    }
+        Bounds b;
+        if (_prefabAabb.TryGetValue(prefab, out b)) return b;
 
-    private Bounds GetCompositeBounds(GameObject go)
-    {
-        var cols = go.GetComponentsInChildren<Collider>(true);
-        bool any = false; Bounds b = default;
-        foreach (var c in cols)
+        var inst = GameObject.Instantiate(prefab);
+        inst.hideFlags = HideFlags.HideAndDontSave;
+
+        bool has = false;
+        Bounds a = new Bounds(Vector3.zero, Vector3.zero);
+
+        foreach (var c in inst.GetComponentsInChildren<Collider>(true))
         {
             if (!c) continue;
             if ((placementCollisionMask.value & (1 << c.gameObject.layer)) == 0) continue;
-            if (!any) { b = c.bounds; any = true; } else b.Encapsulate(c.bounds);
+
+            var wb = c.bounds;
+            Vector3[] corners = {
+                new Vector3(wb.min.x, wb.min.y, wb.min.z), new Vector3(wb.max.x, wb.min.y, wb.min.z),
+                new Vector3(wb.min.x, wb.max.y, wb.min.z), new Vector3(wb.max.x, wb.max.y, wb.min.z),
+                new Vector3(wb.min.x, wb.min.y, wb.max.z), new Vector3(wb.max.x, wb.min.y, wb.max.z),
+                new Vector3(wb.min.x, wb.max.y, wb.max.z), new Vector3(wb.max.x, wb.max.y, wb.max.z),
+            };
+            for (int i = 0; i < corners.Length; i++) corners[i] = inst.transform.InverseTransformPoint(corners[i]);
+
+            Bounds lb = new Bounds(corners[0], Vector3.zero);
+            for (int i = 1; i < corners.Length; i++) lb.Encapsulate(corners[i]);
+
+            if (!has) { a = lb; has = true; } else a.Encapsulate(lb);
         }
-        return any ? b : new Bounds(go.transform.position, Vector3.zero);
+
+        DestroyImmediate(inst);
+        _prefabAabb[prefab] = a;
+        return a;
     }
 
-    private void PruneAnchorsNear(Bounds b, float padding, Transform skipOwner)
+    private Bounds ToWorldAabb(Bounds local, Transform t, float pad = 0f)
     {
-        if (padding <= 0f) return;
-        b.Expand(padding);
+        Vector3 c = local.center;
+        Vector3 e = local.extents + Vector3.one * pad;
 
-        for (int i = openAnchors.Count - 1; i >= 0; i--)
+        Vector3[] corners = {
+            new Vector3(c.x-e.x, c.y-e.y, c.z-e.z), new Vector3(c.x+e.x, c.y-e.y, c.z-e.z),
+            new Vector3(c.x-e.x, c.y+e.y, c.z-e.z), new Vector3(c.x+e.x, c.y+e.y, c.z-e.z),
+            new Vector3(c.x-e.x, c.y-e.y, c.z+e.z), new Vector3(c.x+e.x, c.y-e.y, c.z+e.z),
+            new Vector3(c.x-e.x, c.y+e.y, c.z+e.z), new Vector3(c.x+e.x, c.y+e.y, c.z+e.z),
+        };
+        Bounds w = new Bounds(t.TransformPoint(corners[0]), Vector3.zero);
+        for (int i = 1; i < corners.Length; i++) w.Encapsulate(t.TransformPoint(corners[i]));
+        return w;
+    }
+
+    private void PruneAnchorsNear(Bounds b, float padding, Transform skipOwner = null)
+    {
+        for (int i = _open.Count - 1; i >= 0; i--)
         {
-            var a = openAnchors[i];
-            if (!a) { openAnchors.RemoveAt(i); continue; }
-
-            // Don’t prune anchors that belong to the room we just placed
+            var a = _open[i]; if (!a) { _open.RemoveAt(i); continue; }
             if (skipOwner && a.transform.root == skipOwner.root) continue;
-
-            if (b.Contains(a.transform.position))
-                openAnchors.RemoveAt(i);
+            float d = Vector3.Distance(a.transform.position, b.ClosestPoint(a.transform.position));
+            if (d < padding) _open.RemoveAt(i);
         }
     }
 
-
-    // ───────────────────────────────── Seed / Cleanup / Gizmos ─────────────────
-    private void InitRng()
-    {
-        usedSeed = (seedInput != 0)
-            ? seedInput
-            : (System.Environment.TickCount ^ System.Guid.NewGuid().GetHashCode());
-
-        rng = new System.Random(usedSeed);
-        Random.InitState(usedSeed);
-
-        if (logSteps || verboseSelection) Debug.Log($"[Gen] Seed = {usedSeed}");
-    }
-
-    private void ClearLevel()
-    {
-        openAnchors.Clear(); usedAnchors.Clear();
-        for (int i = 0; i < spawnedRooms.Count; i++) if (spawnedRooms[i]) DestroyImmediate(spawnedRooms[i]);
-        spawnedRooms.Clear();
-
-        _spawnCounts.Clear(); _placedSummonRooms = 0;
-        _lastPrefabAsset = null; _lastPrefabRun = 0; _lastCategory = RoomCategory.None; _lastCategoryRun = 0; _straightStreak = 0;
-        _stepsSinceRoom = 999;
-        StartInstance = null;
-    }
-
-    private bool Validate()
-    {
-        bool ok = true;
-        if (!startRoomPrefab) { Debug.LogError("[Gen] Start room missing."); ok = false; }
-        if (roomPrefabs == null || roomPrefabs.Count == 0) { Debug.LogError("[Gen] Room list empty."); ok = false; }
-        if (placementCollisionMask.value == 0)
-        {
-            Debug.LogWarning("[Gen] placementCollisionMask is 0; set it to your LevelGeo layer.");
-        }
-        return ok;
-    }
-
-#if UNITY_EDITOR
-    void OnDrawGizmos()
-    {
-        if (!drawGizmos) return;
-        Gizmos.color = new Color(1f, 0.6f, 0.15f, 0.9f);
-        for (int i = 0; i < openAnchors.Count; i++)
-        {
-            var a = openAnchors[i]; if (!a) continue;
-            Gizmos.DrawSphere(a.transform.position, 0.06f);
-            Gizmos.DrawRay(a.transform.position, a.transform.forward * 0.4f);
-        }
-    }
-#endif
-
-    private void BakeNavMeshIfReady()
-    {
-        var rootGO = levelRoot ? levelRoot.gameObject : gameObject;
-        var baker = rootGO.GetComponent<NavMeshRuntimeBaker>();
-        if (baker) baker.BakeNow();
-    }
-
-    /// <summary>0=straight, 1=90°.</summary>
-    private float ComputeTurnScore(DoorAnchor target, DoorAnchor chosenOnCandidate)
-    {
-        Vector3 inDir = target.transform.forward.normalized;
-        Vector3 outDir = (-chosenOnCandidate.transform.forward).normalized;
-        float dot = Mathf.Clamp01(Vector3.Dot(inDir, outDir));
-        return 1f - dot;
-    }
-    private void HardAlignRoomAtAnchor(GameObject room, DoorAnchor roomAnchor, DoorAnchor target)
-    {
-        
-        // Build rotations that define “forward” and “up” for each anchor.
-        // We use target.up to remove any roll; if your anchors sit on flat floors, this keeps rooms upright.
-        Quaternion from = Quaternion.LookRotation(roomAnchor.transform.forward, roomAnchor.transform.up);
-        Quaternion to = Quaternion.LookRotation(-target.transform.forward, target.transform.up);
-
-        // Rotate room so its anchor forward/up matches the target’s opposing forward/up.
-        Quaternion delta = to * Quaternion.Inverse(from);
-        room.transform.rotation = delta * room.transform.rotation;
-
-        // Then translate so anchor centers coincide exactly.
-        Vector3 afterAnchorPos = roomAnchor.transform.position; // now in new rotation
-        Vector3 offset = target.transform.position - afterAnchorPos;
-        room.transform.position += offset;
-    }
-    
-    
-    /// <summary>Spawn a door cap so it sits flush in the doorway plane.</summary>
     private void PlaceDoorCapAt(DoorAnchor anchor)
     {
-        if (!doorCapPrefab || !anchor) return;
-
-        Transform parent = levelRoot ? levelRoot : this.transform;
-
-        // Place the cap so its center sits inside the doorway slab, facing into the opening
-        Vector3 pos = anchor.transform.position + anchor.transform.forward * (doorCapDepth * 0.5f);
-        Quaternion rot = Quaternion.LookRotation(-anchor.transform.forward, Vector3.up);
-
-        Instantiate(doorCapPrefab, pos, rot, parent);
+        if (!anchor) return;
+        if (doorCapPrefab)
+        {
+            Vector3 pos = anchor.transform.position + anchor.transform.forward * (doorCapDepth * 0.5f);
+            Quaternion rot = Quaternion.LookRotation(-anchor.transform.forward, Vector3.up);
+            Instantiate(doorCapPrefab, pos, rot, levelRoot);
+        }
+        _open.Remove(anchor);
     }
-    private void SnapToGrid(Transform t)
+
+    private void TryBakeNavMesh()
     {
-        if (!enableGridSnap || t == null) return;
-        Vector3 p = t.position;
-        p.x = Mathf.Round(p.x / gridSize) * gridSize;
-        p.z = Mathf.Round(p.z / gridSize) * gridSize;
-        t.position = p; // do not change Y
+        var rootGO = levelRoot ? levelRoot.gameObject : gameObject;
+        System.Type t = System.Type.GetType("NavMeshRuntimeBaker") ?? System.Type.GetType("NavMeshRuntimeBakler");
+        if (t == null) return;
+        var comp = rootGO.GetComponent(t); if (comp == null) return;
+        var bake = t.GetMethod("BakeNow", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+        if (bake != null) bake.Invoke(comp, null);
     }
 }
