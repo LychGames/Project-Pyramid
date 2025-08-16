@@ -31,6 +31,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] bool enableGridSnap = true;
     [SerializeField, Min(0.1f)] float gridSize = 2f;   // try 2, 2.5, or whatever matches your door pitch
 
+
     // ───────────────────────────────── Flow / Variety ───────────────────────────
     [Header("Flow / Variety")]
     [SerializeField, Range(0f, 1f)] private float preferTurnBias = 0.35f;
@@ -57,6 +58,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Tooltip("Extra pruning distance after placing a Hallway to avoid door spam nearby.")]
     [SerializeField, Min(0f)] private float hallwayClearance = 0.8f;
 
+
     // ───────────────────────────────── Overlap & Bounds ─────────────────────────
     [Header("Overlap Check")]
     [Tooltip("Set this to your 'LevelGeo' (RoomBounds) layer ONLY.")]
@@ -79,6 +81,10 @@ public class SimpleLevelGenerator : MonoBehaviour
     // ───────────────────────────────── Optional Door Caps ───────────────────────
     [Header("Unused Door Sealing (optional)")]
     [SerializeField] private GameObject doorBlockerPrefab;
+    // ---- Door cap options (editor) ----
+    [SerializeField] private GameObject doorCapPrefab;  // assign a thin plug/cap prefab in Inspector
+    [SerializeField, Min(0f)] private float doorCapDepth = 0.10f; // thickness of the cap in meters
+    [SerializeField] private bool sealOpenAnchorsAtEnd = true;     // auto-cap any leftover open doors
 
     // ───────────────────────────────── Debug / Info ─────────────────────────────
     [Header("Debug")]
@@ -248,26 +254,8 @@ public class SimpleLevelGenerator : MonoBehaviour
 
             // NEW:
             HardAlignRoomAtAnchor(ghost, door, targetAnchor);
+            SnapToGrid(ghost.transform);
 
-            // (optional) if you had grid snap, apply it AFTER alignment, or disable it while testing.
-
-
-            // Must be snapped & facing
-            Vector3 aPos = door.transform.position;
-            Vector3 aFwd = door.transform.forward.normalized;
-            Vector3 tPos = targetAnchor.transform.position;
-            Vector3 tFwd = targetAnchor.transform.forward.normalized;
-            float posErr = Vector3.Distance(aPos, tPos);
-            float facingDot = Vector3.Dot(aFwd, -tFwd);
-            const float maxSnapError = 0.02f;   // 2 cm
-            const float minFacingDot = 0.995f;  // ~cos(5°)
-            if (posErr > maxSnapError || facingDot < minFacingDot)
-            {
-                if (verboseSelection)
-                    Debug.LogWarning($"[Gen] REJECT {ghost.name}: bad anchor snap (posErr={posErr:F3}, facingDot={facingDot:F3}).");
-                DestroyImmediate(ghost);
-                continue;
-            }
 
             // Overlap check (robust, with door seam allowance)
             bool blocked = !disableOverlapForDebug
@@ -498,82 +486,89 @@ public class SimpleLevelGenerator : MonoBehaviour
         return false;
     }
 
+    // === STRONG OVERLAP CHECK ===
+    // Allows only a thin "portal slab" at the target door; blocks all other intersections.
     private bool OverlapsExisting_PenetrationAllowPortal(GameObject candidate, DoorAnchor targetAnchor, DoorAnchor candDoor)
     {
-#if UNITY_EDITOR
-        if (verboseSelection)
+        // Gather candidate colliders on the placementCollisionMask (LevelGeo triggers)
+        var candCols = candidate.GetComponentsInChildren<Collider>(true);
+        if (candCols == null || candCols.Length == 0) return false;
+
+        // Fast reject: if none of candidate colliders are on the mask, treat as no-overlap protection (fail safe)
+        bool candOnMask = false;
+        foreach (var c in candCols)
+            if (c && c.enabled && ((placementCollisionMask.value & (1 << c.gameObject.layer)) != 0))
+            { candOnMask = true; break; }
+        if (!candOnMask) return true; // candidate has no LevelGeo bounds -> block
+
+        // Build world colliders list
+        tempWorldCols.Clear();
+        for (int i = 0; i < spawnedRooms.Count; i++)
         {
-            int candOnMask = 0, worldOnMask = 0;
-            foreach (var c in candidate.GetComponentsInChildren<Collider>(true))
-                if (c && c.enabled && ((placementCollisionMask.value & (1 << c.gameObject.layer)) != 0)) candOnMask++;
-            foreach (var r in spawnedRooms)
-                if (r) foreach (var c in r.GetComponentsInChildren<Collider>(true))
-                        if (c && c.enabled && ((placementCollisionMask.value & (1 << c.gameObject.layer)) != 0)) worldOnMask++;
-
-            Debug.Log($"[Gen][Overlap] candidateCols={candOnMask} worldCols={worldOnMask} portal={allowPortalOverlap}");
-        }
-#endif
-
-#if UNITY_EDITOR
-        if (verboseSelection)
-        {
-            int candOnMask = 0, worldOnMask = 0;
-            foreach (var c in candidate.GetComponentsInChildren<Collider>(true))
-                if (c && c.enabled && ((placementCollisionMask.value & (1 << c.gameObject.layer)) != 0)) candOnMask++;
-            foreach (var r in spawnedRooms)
-                if (r) foreach (var c in r.GetComponentsInChildren<Collider>(true))
-                        if (c && c.enabled && ((placementCollisionMask.value & (1 << c.gameObject.layer)) != 0)) worldOnMask++;
-
-            Debug.Log($"[Gen][Overlap] candidateCols={candOnMask} worldCols={worldOnMask} portal={allowPortalOverlap}");
-        }
-#endif
-
-        // 1) Build an allow-set inside a thin portal slab at the target doorway
-        HashSet<Collider> portalSet = null;
-        if (allowPortalOverlap)
-        {
-            var half = new Vector3(Mathf.Max(0.01f, portalSize.x * 0.5f),
-                                   Mathf.Max(0.01f, portalSize.y * 0.5f),
-                                   Mathf.Max(0.01f, portalSlabThickness * 0.5f));
-            int n = Physics.OverlapBoxNonAlloc(targetAnchor.transform.position, half,
-                                               overlapHits, targetAnchor.transform.rotation,
-                                               placementCollisionMask, QueryTriggerInteraction.Collide);
-            if (n > 0)
+            var r = spawnedRooms[i]; if (!r) continue;
+            var cols = r.GetComponentsInChildren<Collider>(true);
+            for (int k = 0; k < cols.Length; k++)
             {
-                portalSet = new HashSet<Collider>();
-                for (int i = 0; i < n; i++) if (overlapHits[i]) portalSet.Add(overlapHits[i]);
+                var wc = cols[k];
+                if (wc && wc.enabled && ((placementCollisionMask.value & (1 << wc.gameObject.layer)) != 0))
+                    tempWorldCols.Add(wc);
             }
         }
 
-        // 2) Gather existing LevelGeo colliders once
-        var worldCols = GetWorldBoundsColliders();
+        // Define the allowed portal slab at the target doorway
+        //   Centered at targetAnchor, normal = targetAnchor.forward
+        Vector3 portalN = targetAnchor.transform.forward.normalized;
+        Vector3 portalCenter = targetAnchor.transform.position;
+        Vector3 portalRight = Vector3.Cross(Vector3.up, portalN).normalized;     // local X in the door plane
+        Vector3 portalUp = Vector3.up;                                         // assuming flat floors
+        float halfW = portalSize.x * 0.5f;
+        float halfH = portalSize.y * 0.5f;
+        float halfT = portalSlabThickness * 0.5f;
 
-        // 3) Pairwise penetration check (robust for rotated composite bounds)
-        var candCols = candidate.GetComponentsInChildren<Collider>(true);
-        foreach (var cC in candCols)
+        bool InPortalSlab(Vector3 p)
         {
-            if (!cC || !cC.enabled) continue;
-            if ((placementCollisionMask.value & (1 << cC.gameObject.layer)) == 0) continue;
+            // Signed distance from door plane
+            float d = Vector3.Dot(p - portalCenter, portalN);
+            if (Mathf.Abs(d) > halfT) return false;
 
-            for (int i = 0; i < worldCols.Count; i++)
+            // Project into the plane and check rectangle
+            Vector3 inPlane = p - d * portalN;
+            float rx = Vector3.Dot(inPlane - portalCenter, portalRight);
+            float uy = Vector3.Dot(inPlane - portalCenter, portalUp);
+            return Mathf.Abs(rx) <= halfW && Mathf.Abs(uy) <= halfH;
+        }
+
+        // Check each candidate collider against each world collider
+        for (int i = 0; i < candCols.Length; i++)
+        {
+            var a = candCols[i];
+            if (!a || !a.enabled || ((placementCollisionMask.value & (1 << a.gameObject.layer)) == 0)) continue;
+
+            Vector3 pa = a.transform.position; Quaternion qa = a.transform.rotation;
+            for (int j = 0; j < tempWorldCols.Count; j++)
             {
-                var cE = worldCols[i];
-                if (!cE || !cE.enabled) continue;
-                if (cE.transform.root == candidate.transform.root) continue; // skip self
-                if (portalSet != null && portalSet.Contains(cE)) continue;   // ignore seam
+                var b = tempWorldCols[j]; if (!b) continue;
+                Vector3 pb = b.transform.position; Quaternion qb = b.transform.rotation;
 
+                // If they penetrate, allow only if the contact point lies inside the portal slab
                 Vector3 dir; float dist;
-                if (Physics.ComputePenetration(
-                    cC, cC.transform.position, cC.transform.rotation,
-                    cE, cE.transform.position, cE.transform.rotation,
-                    out dir, out dist))
+                if (Physics.ComputePenetration(a, pa, qa, b, pb, qb, out dir, out dist))
                 {
-                    if (dist > 0.001f) return true; // real intersection
+                    // Find a representative point inside candidate that is closest to B along penetration dir
+                    // (approx) use candidate collider position; if that’s not in slab, count as blocked.
+                    Vector3 contactApprox = pa; // cheap but effective for our doorway slab
+                    if (allowPortalOverlap && InPortalSlab(contactApprox))
+                        continue; // allowed small portal overlap
+                    return true; // BLOCK
                 }
             }
         }
-        return false;
+        return false; // no illegal overlaps
     }
+
+    // temp list to avoid GC
+    private static readonly List<Collider> tempWorldCols = new List<Collider>(256);
+
 
     private List<Collider> GetWorldBoundsColliders()
     {
@@ -692,6 +687,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     }
     private void HardAlignRoomAtAnchor(GameObject room, DoorAnchor roomAnchor, DoorAnchor target)
     {
+        
         // Build rotations that define “forward” and “up” for each anchor.
         // We use target.up to remove any roll; if your anchors sit on flat floors, this keeps rooms upright.
         Quaternion from = Quaternion.LookRotation(roomAnchor.transform.forward, roomAnchor.transform.up);
@@ -705,5 +701,28 @@ public class SimpleLevelGenerator : MonoBehaviour
         Vector3 afterAnchorPos = roomAnchor.transform.position; // now in new rotation
         Vector3 offset = target.transform.position - afterAnchorPos;
         room.transform.position += offset;
+    }
+    
+    
+    /// <summary>Spawn a door cap so it sits flush in the doorway plane.</summary>
+    private void PlaceDoorCapAt(DoorAnchor anchor)
+    {
+        if (!doorCapPrefab || !anchor) return;
+
+        Transform parent = levelRoot ? levelRoot : this.transform;
+
+        // Place the cap so its center sits inside the doorway slab, facing into the opening
+        Vector3 pos = anchor.transform.position + anchor.transform.forward * (doorCapDepth * 0.5f);
+        Quaternion rot = Quaternion.LookRotation(-anchor.transform.forward, Vector3.up);
+
+        Instantiate(doorCapPrefab, pos, rot, parent);
+    }
+    private void SnapToGrid(Transform t)
+    {
+        if (!enableGridSnap || t == null) return;
+        Vector3 p = t.position;
+        p.x = Mathf.Round(p.x / gridSize) * gridSize;
+        p.z = Mathf.Round(p.z / gridSize) * gridSize;
+        t.position = p; // do not change Y
     }
 }
