@@ -1,23 +1,34 @@
 using UnityEngine;
 
-[DisallowMultipleComponent]
+[System.Flags]
+public enum RoomCategory
+{
+    None = 0,
+    Hallway = 1 << 0,
+    Small = 1 << 1,
+    Medium = 1 << 2,
+    Special = 1 << 3,
+    Summon = 1 << 4,
+    // add more categories as needed
+    All = ~0
+}
+
+/// <summary>
+/// Place one of these at the CENTER of every doorway.
+/// Blue Z axis (forward) MUST point OUT through the opening.
+/// Parent chain scale must be (1,1,1).
+/// </summary>
 public class DoorAnchor : MonoBehaviour
 {
-    // add near the top of the class:
+    [Tooltip("What categories are allowed to attach HERE (bitmask).")]
     public RoomCategory allowedTargets = RoomCategory.Hallway | RoomCategory.Small | RoomCategory.Medium | RoomCategory.Special | RoomCategory.Summon;
 
-    // optional: for a pure hallway door, set this to Hallway only in the prefab.
-    // for "connects all" hubs, you can leave it as-is or toggle in RoomMeta.
-
-    // Marker component for doorway connection points.
-    // Keep it lightweight. We track usage in the generator (no need for flags here).
-
-    // OPTIONAL: Draw an arrow in Scene view so you can see direction quickly.
-    private void OnDrawGizmos()
+#if UNITY_EDITOR
+    void OnDrawGizmosSelected()
     {
-        Gizmos.matrix = transform.localToWorldMatrix;
-        Gizmos.color = new Color(0.2f, 0.8f, 1f, 0.9f);
-        Gizmos.DrawRay(Vector3.zero, Vector3.forward * 0.5f);
-        Gizmos.DrawWireCube(new Vector3(0f, 0f, 0.02f), new Vector3(0.2f, 0.2f, 0.04f));
+        Gizmos.color = Color.cyan;
+        Gizmos.DrawRay(transform.position, transform.forward * 0.8f);
+        Gizmos.DrawSphere(transform.position, 0.05f);
     }
+#endif
 }

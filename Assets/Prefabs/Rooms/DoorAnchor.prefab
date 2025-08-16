@@ -45,7 +45,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5ca1a803ecc84c488b635cdf56d317c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  allowedTargets: 62
+  allowedTargets: 30
 --- !u!114 &4656825910266933983
 MonoBehaviour:
   m_ObjectHideFlags: 0

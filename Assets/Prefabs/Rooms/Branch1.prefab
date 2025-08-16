@@ -10,7 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 502224808031619192}
   - component: {fileID: 1320910700965650155}
-  m_Layer: 6
+  m_Layer: 3
   m_Name: RoomBounds
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -26,8 +26,8 @@ Transform:
   m_GameObject: {fileID: 182396245603310996}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0.4, z: 0}
-  m_LocalScale: {x: 10.2, y: 1.1, z: 10.2}
+  m_LocalPosition: {x: 0, y: 2.5, z: 0}
+  m_LocalScale: {x: 10, y: 5.1, z: 10}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 4152200066571936901}
@@ -51,8 +51,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1, y: 4.807928, z: 1}
-  m_Center: {x: 0, y: 1.903964, z: 0}
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &553048636261336115
 GameObject:
   m_ObjectHideFlags: 0
@@ -100,7 +100,7 @@ GameObject:
   - component: {fileID: 6707487479797273426}
   - component: {fileID: 1994737599774385161}
   - component: {fileID: 3823252477223638767}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: TopDoor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -208,7 +208,7 @@ GameObject:
   - component: {fileID: 4172735478386883903}
   - component: {fileID: 5768661526433599946}
   - component: {fileID: 5033556417881659365}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -366,7 +366,7 @@ Transform:
   m_GameObject: {fileID: 1087911642978050246}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 1, z: -0, w: 0}
-  m_LocalPosition: {x: 0, y: 2.5, z: 0}
+  m_LocalPosition: {x: 0, y: 1.75, z: -0.525}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -445,7 +445,7 @@ GameObject:
   - component: {fileID: 1634271312481303747}
   - component: {fileID: 1172176709607099168}
   - component: {fileID: 2350496563590688223}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: TopDoor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -553,7 +553,7 @@ GameObject:
   - component: {fileID: 504938764522122765}
   - component: {fileID: 3200191642513556636}
   - component: {fileID: 8719265146071207519}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_E
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -661,7 +661,7 @@ GameObject:
   - component: {fileID: 7689866370955309715}
   - component: {fileID: 2698823251156353339}
   - component: {fileID: 8753557522091442278}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -784,7 +784,7 @@ Transform:
   m_GameObject: {fileID: 4639178403647030681}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 2.5, z: 4.985}
+  m_LocalPosition: {x: 0, y: 1.75, z: 5.525}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -936,7 +936,7 @@ GameObject:
   - component: {fileID: 4234594302206977776}
   - component: {fileID: 6627656092869815652}
   - component: {fileID: 2035956899689385565}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1059,7 +1059,7 @@ Transform:
   m_GameObject: {fileID: 5577511745609348666}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -1, z: -0, w: 0}
-  m_LocalPosition: {x: 0, y: 2.5, z: 0}
+  m_LocalPosition: {x: 0, y: 1.75, z: -0.525}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1126,7 +1126,6 @@ Transform:
   - {fileID: 3832229206603636308}
   - {fileID: 9037511750979416527}
   - {fileID: 502224808031619192}
-  - {fileID: 9203038335711882496}
   - {fileID: 2091356531964418806}
   - {fileID: 6940450840989207252}
   - {fileID: 6376976967219163694}
@@ -1162,11 +1161,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   category: 4
-  weight: 1
-  maxCount: 0
-  uniqueOnce: 0
   connectsAll: 0
-  onlyConnectsToHallways: 0
+  weight: 1
+  uniqueOnce: 0
+  maxCount: 0
+  clearancePadding: 0
 --- !u!1 &7916644533275483344
 GameObject:
   m_ObjectHideFlags: 0
@@ -1179,7 +1178,7 @@ GameObject:
   - component: {fileID: 6886061150878497247}
   - component: {fileID: 7708651847092556372}
   - component: {fileID: 2122135688214159706}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: TopDoor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1287,7 +1286,7 @@ GameObject:
   - component: {fileID: 3620001137669779430}
   - component: {fileID: 6507961078923939958}
   - component: {fileID: 3828883790137973464}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1395,7 +1394,7 @@ GameObject:
   - component: {fileID: 1989866461795750813}
   - component: {fileID: 5413791988474118979}
   - component: {fileID: 4097882296831420097}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1491,50 +1490,6 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
---- !u!1 &8339273352612774953
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 9203038335711882496}
-  - component: {fileID: 7899038180404672521}
-  m_Layer: 0
-  m_Name: SpawnPoint
-  m_TagString: Playerspawn
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &9203038335711882496
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8339273352612774953}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: -0.7071068, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 0, y: 0.1, z: -2.017}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 4152200066571936901}
-  m_LocalEulerAnglesHint: {x: 0, y: -90, z: 0}
---- !u!114 &7899038180404672521
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 8339273352612774953}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 953ac3d2ef1506c4e9018886709014b0, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &8372870421835845497
 GameObject:
   m_ObjectHideFlags: 0
@@ -1655,7 +1610,7 @@ GameObject:
   - component: {fileID: 3919133030913029978}
   - component: {fileID: 3592475584694475294}
   - component: {fileID: 1965263534457112592}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}

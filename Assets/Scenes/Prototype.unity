@@ -283,21 +283,35 @@ MonoBehaviour:
   - {fileID: 3081067702570298388, guid: 72145f6eb5b936d47bdd17a88e2a922e, type: 3}
   - {fileID: 4267210184061382240, guid: 4c108a56053f94a4297669ddc59142db, type: 3}
   levelRoot: {fileID: 2114845929}
-  maxRooms: 24
+  maxRooms: 100
   autoGenerateOnPlay: 1
-  randomizeSeed: 1
-  seed: 0
+  seedInput: 0
   maxPlacementAttemptsPerRoom: 30
-  avoidImmediateStraight: 1
+  enableGridSnap: 1
+  gridSize: 2
+  preferTurnBias: 0.35
+  forceFirstTurnWithin: 0
+  frontierShuffleWindow: 5
+  maxConsecutiveSamePrefab: 0
+  maxConsecutiveSameCategory: 0
+  maxConsecutiveStraight: 0
+  corridorFirstSteps: 6
+  minHallsBetweenRooms: 2
+  hallwayContinueBias: 0.6
+  hallwayClearance: 0.8
   placementCollisionMask:
     serializedVersion: 2
-    m_Bits: 0
-  doorBlockerPrefab: {fileID: 4825619940582829198, guid: 5c4de261340f5af459d1f65eda2a8d94, type: 3}
-  logSteps: 0
+    m_Bits: 8
+  allowPortalOverlap: 1
+  portalSize: {x: 0.05, y: 0.05}
+  portalSlabThickness: 0.02
+  globalClearancePadding: 0
+  doorBlockerPrefab: {fileID: 0}
+  logSteps: 1
   drawGizmos: 1
+  verboseSelection: 1
+  disableOverlapForDebug: 0
   usedSeed: 0
-  preferTurnBias: 0.35
-  forceFirstTurnWithin: 3
 --- !u!4 &598219553
 Transform:
   m_ObjectHideFlags: 0

@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 1824281417469940543}
   - component: {fileID: 711019846832901538}
   - component: {fileID: 452992586680159238}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -134,7 +134,7 @@ Transform:
   m_GameObject: {fileID: 978653658689526261}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -5.04342, y: 0, z: 4.56777}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -143,6 +143,8 @@ Transform:
   - {fileID: 548339913139761544}
   - {fileID: 2047824605917675939}
   - {fileID: 7077310395372422708}
+  - {fileID: 986753629097334703}
+  - {fileID: 9084916846834110891}
   - {fileID: 1643792933946881196}
   - {fileID: 1905820695040789063}
   m_Father: {fileID: 0}
@@ -159,12 +161,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe443d9a9f925654c81b5f33c55df585, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  category: 4
+  category: 1
+  connectsAll: 1
   weight: 1
-  maxCount: 0
   uniqueOnce: 0
-  connectsAll: 0
-  onlyConnectsToHallways: 0
+  maxCount: 0
+  clearancePadding: 0
 --- !u!1 &1051968244318067594
 GameObject:
   m_ObjectHideFlags: 0
@@ -198,7 +200,6 @@ Transform:
   - {fileID: 1901404918041183926}
   - {fileID: 5202266876582012513}
   - {fileID: 5252602785856898646}
-  - {fileID: 986753629097334703}
   m_Father: {fileID: 360876169352248251}
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1 &1264834282182465673
@@ -213,7 +214,7 @@ GameObject:
   - component: {fileID: 1269380478581788923}
   - component: {fileID: 1819501348536463632}
   - component: {fileID: 7443165457584640662}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -321,7 +322,7 @@ GameObject:
   - component: {fileID: 7284465610196994237}
   - component: {fileID: 3574351708500239939}
   - component: {fileID: 3913282637306032391}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: TopDoor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -443,7 +444,7 @@ Transform:
   m_GameObject: {fileID: 1860515366958239140}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 2.5, z: 7}
+  m_LocalPosition: {x: 0, y: 1.75, z: 7.16}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -474,7 +475,7 @@ GameObject:
   - component: {fileID: 6565455685998310871}
   - component: {fileID: 4458692014913275107}
   - component: {fileID: 2094405092034399725}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -704,7 +705,7 @@ Transform:
   m_GameObject: {fileID: 3697876291866024054}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: 0, y: 2.5, z: -7}
+  m_LocalPosition: {x: 0, y: 1.75, z: -7.16}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -733,7 +734,7 @@ GameObject:
   m_Component:
   - component: {fileID: 548339913139761544}
   - component: {fileID: 7509910263054451134}
-  m_Layer: 0
+  m_Layer: 3
   m_Name: BoxCollider
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -750,7 +751,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 2.5, z: 0}
-  m_LocalScale: {x: 6.2, y: 5.2, z: 14.1}
+  m_LocalScale: {x: 6, y: 5.2, z: 14}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 360876169352248251}
@@ -801,12 +802,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4788247725589614107}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0, y: 2.5, z: 0}
+  m_LocalRotation: {x: -0, y: 0.7071068, z: -0, w: 0.7071068}
+  m_LocalPosition: {x: 3, y: 1.75, z: -2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1643792933946881196}
+  m_Father: {fileID: 360876169352248251}
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!114 &5704060272123661552
 MonoBehaviour:
@@ -833,7 +834,7 @@ GameObject:
   - component: {fileID: 1135287313440172977}
   - component: {fileID: 316139707883116879}
   - component: {fileID: 3372847565417247478}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -941,7 +942,7 @@ GameObject:
   - component: {fileID: 9056202720645174851}
   - component: {fileID: 1777154514592864991}
   - component: {fileID: 876618264836852002}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: TopDoor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1049,7 +1050,7 @@ GameObject:
   - component: {fileID: 2356438074949149292}
   - component: {fileID: 7041013212153530063}
   - component: {fileID: 1463450177511450377}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1170,12 +1171,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6740813589713433271}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: 0, y: 2.5, z: 0}
+  m_LocalRotation: {x: -0, y: 0.7071068, z: -0, w: -0.7071068}
+  m_LocalPosition: {x: -3, y: 1.75, z: -2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 1905820695040789063}
+  m_Father: {fileID: 360876169352248251}
   m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!114 &4738752159398102142
 MonoBehaviour:
@@ -1331,7 +1332,6 @@ Transform:
   - {fileID: 1288334419138095900}
   - {fileID: 992149510352337786}
   - {fileID: 8606858175515575804}
-  - {fileID: 9084916846834110891}
   m_Father: {fileID: 360876169352248251}
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
 --- !u!1 &9166276995332881733
@@ -1346,7 +1346,7 @@ GameObject:
   - component: {fileID: 136340060573706620}
   - component: {fileID: 8481040624896799980}
   - component: {fileID: 3378655230839506145}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}

@@ -120,7 +120,7 @@ GameObject:
   - component: {fileID: 8463527422315601963}
   - component: {fileID: 8949257931796424696}
   - component: {fileID: 3087925176031844766}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -228,7 +228,7 @@ GameObject:
   - component: {fileID: 1142657126976761608}
   - component: {fileID: 3943443663463214223}
   - component: {fileID: 3688913475187352259}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -359,6 +359,7 @@ Transform:
   - {fileID: 1537704181070520044}
   - {fileID: 3516171379877121363}
   - {fileID: 233860809310853684}
+  - {fileID: 3670813790418521222}
   - {fileID: 4452884546793234420}
   - {fileID: 7884477030524887440}
   - {fileID: 5526401142376767342}
@@ -380,12 +381,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe443d9a9f925654c81b5f33c55df585, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  category: 2
+  category: 1
+  connectsAll: 1
   weight: 1.2
-  maxCount: 0
   uniqueOnce: 0
-  connectsAll: 0
-  onlyConnectsToHallways: 0
+  maxCount: 0
+  clearancePadding: 0
 --- !u!1 &3457178333826988241
 GameObject:
   m_ObjectHideFlags: 0
@@ -412,7 +413,7 @@ Transform:
   m_GameObject: {fileID: 3457178333826988241}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: 0, y: 2.5, z: -7}
+  m_LocalPosition: {x: 0, y: 1.75, z: -7}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -430,7 +431,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5ca1a803ecc84c488b635cdf56d317c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  allowedTargets: 62
+  allowedTargets: 30
 --- !u!1 &3625700606300656158
 GameObject:
   m_ObjectHideFlags: 0
@@ -443,7 +444,7 @@ GameObject:
   - component: {fileID: 4318597283300683992}
   - component: {fileID: 7270587533076617691}
   - component: {fileID: 6854525751556754838}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: L_Wall (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -551,7 +552,7 @@ GameObject:
   - component: {fileID: 4675699795384375397}
   - component: {fileID: 3464548171104297256}
   - component: {fileID: 9133259674280060746}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: L_Wall
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -765,7 +766,7 @@ GameObject:
   m_Component:
   - component: {fileID: 233860809310853684}
   - component: {fileID: 4325186268645836428}
-  m_Layer: 0
+  m_Layer: 3
   m_Name: BoxCollider
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -782,7 +783,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 2.5, z: 0}
-  m_LocalScale: {x: 6.2, y: 5.2, z: 14.1}
+  m_LocalScale: {x: 6, y: 5.2, z: 14}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 3846795799312080603}
@@ -802,7 +803,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -820,7 +821,7 @@ GameObject:
   - component: {fileID: 1054362149428141558}
   - component: {fileID: 8043158624463358103}
   - component: {fileID: 803310506061854105}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_1 (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -911,6 +912,59 @@ BoxCollider:
     m_Bits: 0
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!1 &7215591468929316378
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3670813790418521222}
+  - component: {fileID: 9052323478353741750}
+  m_Layer: 3
+  m_Name: L_BoxCollider
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3670813790418521222
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7215591468929316378}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 6, y: 2.5, z: 3.5}
+  m_LocalScale: {x: 6, y: 5.2, z: 7}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 3846795799312080603}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &9052323478353741750
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7215591468929316378}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -1050,7 +1104,7 @@ Transform:
   m_GameObject: {fileID: 8240638663589314804}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 9, y: 2.5, z: 3.5}
+  m_LocalPosition: {x: 9, y: 1.75, z: 3.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1068,7 +1122,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b5ca1a803ecc84c488b635cdf56d317c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  allowedTargets: 62
+  allowedTargets: 30
 --- !u!1 &8889016875043283411
 GameObject:
   m_ObjectHideFlags: 0

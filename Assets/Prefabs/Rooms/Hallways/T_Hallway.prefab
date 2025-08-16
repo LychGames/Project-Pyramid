@@ -120,7 +120,7 @@ GameObject:
   - component: {fileID: 7159231329060747565}
   - component: {fileID: 1329004368054511650}
   - component: {fileID: 6354343830977215029}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_1_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -334,7 +334,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2503999334575764334}
   - component: {fileID: 5182258502325047925}
-  m_Layer: 0
+  m_Layer: 3
   m_Name: BoxCollider
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -351,7 +351,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 2.5, z: 0}
-  m_LocalScale: {x: 6.2, y: 5.2, z: 14.1}
+  m_LocalScale: {x: 6, y: 5.2, z: 14}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 5416226963668017160}
@@ -371,7 +371,7 @@ BoxCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 0
+  m_IsTrigger: 1
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
@@ -389,7 +389,7 @@ GameObject:
   - component: {fileID: 3161258104335725172}
   - component: {fileID: 6914046764482068572}
   - component: {fileID: 4482201466892381468}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: T_Hall_Straight_Wall_1_Left (1)
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -497,7 +497,7 @@ GameObject:
   - component: {fileID: 2469393018383399261}
   - component: {fileID: 8222623756738599113}
   - component: {fileID: 4901738515935176825}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -593,6 +593,59 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!1 &4216878292900275660
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4304781441882835895}
+  - component: {fileID: 8604221404784623843}
+  m_Layer: 3
+  m_Name: T_BoxCollider
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &4304781441882835895
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4216878292900275660}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 6, y: 2.5, z: 0}
+  m_LocalScale: {x: 6, y: 5.2, z: 6}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 5416226963668017160}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &8604221404784623843
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4216878292900275660}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &4267210184061382240
 GameObject:
   m_ObjectHideFlags: 0
@@ -633,6 +686,7 @@ Transform:
   - {fileID: 1073224135814607107}
   - {fileID: 6658922023625826598}
   - {fileID: 2503999334575764334}
+  - {fileID: 4304781441882835895}
   - {fileID: 3992438253015041875}
   - {fileID: 7203479302496451297}
   - {fileID: 8699160461587405951}
@@ -650,12 +704,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe443d9a9f925654c81b5f33c55df585, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  category: 2
+  category: 1
+  connectsAll: 1
   weight: 0.8
-  maxCount: 0
   uniqueOnce: 0
-  connectsAll: 0
-  onlyConnectsToHallways: 0
+  maxCount: 0
+  clearancePadding: 0
 --- !u!1 &4772986850200986991
 GameObject:
   m_ObjectHideFlags: 0
@@ -790,7 +844,7 @@ Transform:
   m_GameObject: {fileID: 6212161664779768114}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 9, y: 2.5, z: -0.0000010728836}
+  m_LocalPosition: {x: 9, y: 1.75, z: -0.0000010728836}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -821,7 +875,7 @@ GameObject:
   - component: {fileID: 2842080924210923431}
   - component: {fileID: 6752894799718080477}
   - component: {fileID: 1249112032318565876}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: T_Hall_Straight_Wall_1_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -929,7 +983,7 @@ GameObject:
   - component: {fileID: 2623391012203914201}
   - component: {fileID: 5029478806475947776}
   - component: {fileID: 2600387823304905346}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Hall_Straight_Wall_1_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -1051,7 +1105,7 @@ Transform:
   m_GameObject: {fileID: 7144452791328484573}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 2.5, z: 7}
+  m_LocalPosition: {x: 0, y: 1.75, z: 7}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1096,7 +1150,7 @@ Transform:
   m_GameObject: {fileID: 8126383793234154228}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
-  m_LocalPosition: {x: 0, y: 2.5, z: -7}
+  m_LocalPosition: {x: 0, y: 1.75, z: -7}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

@@ -12,7 +12,7 @@ GameObject:
   - component: {fileID: 7595842877990573291}
   - component: {fileID: 5328539810029626926}
   - component: {fileID: 7445755851547314471}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -214,7 +214,7 @@ GameObject:
   - component: {fileID: 4002392384983105384}
   - component: {fileID: 6534209721002152747}
   - component: {fileID: 366034078356507118}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: Wall_N_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -322,7 +322,7 @@ GameObject:
   - component: {fileID: 5499939022512191849}
   - component: {fileID: 3980428270468507282}
   - component: {fileID: 2161791713105802257}
-  m_Layer: 3
+  m_Layer: 0
   m_Name: TopDoor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
