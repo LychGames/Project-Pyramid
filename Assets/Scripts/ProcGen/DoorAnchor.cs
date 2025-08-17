@@ -12,42 +12,83 @@ public class DoorAnchor : MonoBehaviour
     [Header("Collision Detection")]
     [SerializeField] Vector3 colliderSize = new Vector3(0.5f, 2f, 0.1f);
     [SerializeField] Vector3 colliderCenter = Vector3.zero;
+    [SerializeField] bool autoManageCollider = true; // If off, your manual BoxCollider edits are preserved
     
     private BoxCollider doorCollider;
 
     void Awake()
     {
-        SetupDoorCollider();
+        EnsureCollider();
+        if (autoManageCollider)
+        {
+            ApplyFieldsToCollider();
+        }
+        else
+        {
+            // Keep your manual collider size/center; ensure trigger + optional layer
+            if (doorCollider != null)
+            {
+                doorCollider.isTrigger = true;
+                TrySetDoorTriggerLayer();
+                // Reflect current collider values back into fields so they persist
+                colliderSize = doorCollider.size;
+                colliderCenter = doorCollider.center;
+            }
+        }
     }
 
     void OnValidate()
     {
         if (Application.isPlaying) return;
-        SetupDoorCollider();
-    }
+        EnsureCollider();
+        if (doorCollider == null) return;
 
-    void SetupDoorCollider()
-    {
-        // Get or create BoxCollider
-        if (doorCollider == null)
-            doorCollider = GetComponent<BoxCollider>();
-        
-        if (doorCollider == null)
-            doorCollider = gameObject.AddComponent<BoxCollider>();
-        
-        // Configure the collider for door detection
-        doorCollider.isTrigger = true;
-        doorCollider.size = colliderSize;
-        doorCollider.center = colliderCenter;
-        
-        // Set to DoorTrigger layer if it exists
-        if (LayerMask.NameToLayer("DoorTrigger") != -1)
+        if (autoManageCollider)
         {
-            gameObject.layer = LayerMask.NameToLayer("DoorTrigger");
+            ApplyFieldsToCollider();
         }
         else
         {
+            // Preserve your manual edits and mirror them into the serialized fields
+            colliderSize = doorCollider.size;
+            colliderCenter = doorCollider.center;
+            doorCollider.isTrigger = true;
+            TrySetDoorTriggerLayer();
+        }
+    }
+
+    void EnsureCollider()
+    {
+        if (doorCollider == null)
+            doorCollider = GetComponent<BoxCollider>();
+        if (doorCollider == null)
+            doorCollider = gameObject.AddComponent<BoxCollider>();
+        doorCollider.isTrigger = true;
+        TrySetDoorTriggerLayer();
+    }
+
+    void ApplyFieldsToCollider()
+    {
+        if (doorCollider == null) return;
+        doorCollider.isTrigger = true;
+        doorCollider.size = colliderSize;
+        doorCollider.center = colliderCenter;
+        TrySetDoorTriggerLayer();
+    }
+
+    void TrySetDoorTriggerLayer()
+    {
+        int layer = LayerMask.NameToLayer("DoorTrigger");
+        if (layer != -1)
+        {
+            gameObject.layer = layer;
+        }
+        else
+        {
+            // Only warn in the editor
+            #if UNITY_EDITOR
             Debug.LogWarning("DoorTrigger layer not found! Please create it in Project Settings > Tags and Layers");
+            #endif
         }
     }
 

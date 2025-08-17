@@ -19,34 +19,28 @@ public class PlayerSpawner : MonoBehaviour
 
     void Start()
     {
-             if (!playerPrefab == null)
+        if (playerPrefab == null)
         {
             Debug.LogError("PlayerSpawner: No playerPrefab assigned.");
             return;
         }
 
-        Transform spawn = FindSpawnPoint();
-        if (!spawn)
-        {
-            Debug.LogError("PlayerSpawner: No spawn point found (tag 'PlayerSpawn' or assign fallbackSpawn).");
-            return;
-        }
-        Vector3 spawnPos = spawn.position;
-        Quaternion spawnRot = spawn.rotation;
-        SpawnAndGround(spawn.position, spawn.rotation);
+        StartCoroutine(SpawnWhenReady());
     }
 
     Transform FindSpawnPoint()
     {
-        // 1) Try the tag, but don’t crash if it doesn’t exist.
+        // 1) Try the tag, but donï¿½t crash if it doesnï¿½t exist.
         try
         {
             GameObject tagged = GameObject.FindGameObjectWithTag("PlayerSpawn");
             if (tagged) return tagged.transform;
+            GameObject taggedAlt = GameObject.FindGameObjectWithTag("Playerspawn");
+            if (taggedAlt) return taggedAlt.transform;
         }
         catch (UnityException)
         {
-            // Tag not defined — ignore and fall through to other options.
+            // Tag not defined ï¿½ ignore and fall through to other options.
             Debug.LogWarning("PlayerSpawner: Tag 'PlayerSpawn' is not defined. Using fallback(s).");
         }
 
@@ -63,7 +57,7 @@ public class PlayerSpawner : MonoBehaviour
 
     void SpawnAndGround(Vector3 basePos, Quaternion rot)
     {
-        // Instantiate the player at the requested transform (we’ll ground it next).
+        // Instantiate the player at the requested transform (weï¿½ll ground it next).
         Transform spawn = FindSpawnPoint();
         if (spawn == null)
         {
@@ -77,7 +71,7 @@ public class PlayerSpawner : MonoBehaviour
         if (grounding != null && grounding.enabled)
         {
             GroundSpawnedPlayerSafe(playerInstance);
-            return; // we’re done — use the new, robust grounding only
+            return; // weï¿½re done ï¿½ use the new, robust grounding only
         }
 
         // LEGACY grounding path (kept for compatibility; only runs if new grounding is disabled)

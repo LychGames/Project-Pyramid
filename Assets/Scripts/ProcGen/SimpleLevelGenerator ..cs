@@ -30,6 +30,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] float cellSize = 10f;            // 10m for your equilateral triangle
     [SerializeField] bool snapToLattice = true;
     [SerializeField] bool snapYawTo30 = true;
+    [SerializeField] bool snapAttachedToLattice = false; // avoid snapping when attaching to an existing anchor
 
     [Header("Placement Rules")]
     [SerializeField] float minModuleDistance = 8f;    // Minimum distance between module centers (prevents overlaps)
@@ -44,9 +45,48 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] bool generateButton = false;
     [SerializeField] bool clearButton = false;
 
+    [Header("Reliability / Quality Gates")]
+    [SerializeField] bool autoRetryUntilGood = true;
+    [SerializeField] int maxGenerationRetries = 6;
+    [SerializeField] int minModulesAccept = 12;
+    [SerializeField] int minPotentialConnectionsAccept = 1;
+    [SerializeField] float connectionDistance = 12f; // anchors closer than this are considered connectable
+    [SerializeField, Range(-1f, 1f)] float connectionFacingDotThreshold = -0.6f; // facing roughly towards each other
+
+    [Header("Loop/Branch Strategies")]
+    [SerializeField] bool prioritizeAnchorsThatCanConnect = true;
+    [SerializeField] bool preferConnectorWhenPartnerDetected = true;
+    [SerializeField] bool limitStartAnchorsToOne = false;
+
+    [Header("Finishing")]
+    [SerializeField] GameObject doorCapPrefab;
+    [SerializeField] bool sealOpenAnchorsAtEnd = false;
+
+    [Header("Placement Policy")]
+    [SerializeField] bool disallowConsecutiveConnectors = true;
+    [SerializeField] int minPlacementsBetweenConnectors = 2; // placements between connector uses
+    [SerializeField] int forceHallwayFirstSteps = 6; // first N placements: no connectors
+
+    [Header("Connection Hotspots")]
+    [SerializeField] bool preferNearRecentConnections = true;
+    [SerializeField] int recentConnectionPointsLimit = 8;
+    [SerializeField] float hotspotRadius = 10f;
+    [SerializeField] float hotspotBias = 1.0f; // increases score for anchors near hotspots
+    [SerializeField] bool preferHighAnchorCountNearHotspot = true; // prefer hall variants with more side doors
+
     private System.Random rng;
     private readonly List<Transform> placedModules = new List<Transform>();
     private readonly List<Transform> availableAnchors = new List<Transform>();
+    private int placementsSinceLastConnector = int.MaxValue; // reset per run
+    private int nonStartPlacements = 0; // excludes the initial start module
+    private int totalConnectorsPlaced = 0;
+    private int totalHallwaysPlaced = 0;
+    // Branch tracking: encourage cross-branch connections
+    private readonly Dictionary<Transform, int> anchorToBranchId = new Dictionary<Transform, int>();
+    // Recent hotspots where a connection was possible/attempted
+    private readonly List<Vector3> recentConnectionPoints = new List<Vector3>();
+    // Cache for counting anchors per prefab
+    private readonly Dictionary<GameObject, int> prefabToAnchorCount = new Dictionary<GameObject, int>();
 
     void Start()
     {
@@ -73,25 +113,81 @@ public class SimpleLevelGenerator : MonoBehaviour
     {
         Debug.Log("[Gen] === STARTING SIMPLIFIED LATTICE GENERATION ===");
 
-        rng = randomizeSeed ? new System.Random() : new System.Random(seed);
-        placedModules.Clear();
-        availableAnchors.Clear();
+        int attempts = Mathf.Max(1, autoRetryUntilGood ? maxGenerationRetries : 1);
+        int bestScore = int.MinValue;
+        List<Transform> bestModules = null;
 
-        ClearLevel();
-
-        // Place start room
-        Transform startRoot = PlaceStartRoom();
-        if (startRoot == null)
+        for (int attempt = 0; attempt < attempts; attempt++)
         {
-            Debug.LogError("[Gen] Failed to place start room!");
-            return;
+            rng = randomizeSeed ? new System.Random() : new System.Random(seed + attempt);
+            placedModules.Clear();
+            availableAnchors.Clear();
+            placementsSinceLastConnector = int.MaxValue;
+            nonStartPlacements = 0;
+            totalConnectorsPlaced = 0;
+            totalHallwaysPlaced = 0;
+            anchorToBranchId.Clear();
+            recentConnectionPoints.Clear();
+            prefabToAnchorCount.Clear();
+
+            ClearLevel();
+
+            // Place start room
+            Transform startRoot = PlaceStartRoom();
+            if (startRoot == null)
+            {
+                Debug.LogError("[Gen] Failed to place start room!");
+                return;
+            }
+
+            // Collect initial anchors
+            CollectAnchorsIntoList(startRoot, availableAnchors);
+            AssignInitialBranches(startRoot);
+            if (limitStartAnchorsToOne && availableAnchors.Count > 1)
+            {
+                Transform best = ChooseForwardMostAnchor(availableAnchors);
+                availableAnchors.Clear();
+                if (best) availableAnchors.Add(best);
+            }
+
+            // Generate the level
+            GenerateFromAnchors();
+
+            // Optionally seal remaining open anchors
+            if (sealOpenAnchorsAtEnd && doorCapPrefab != null)
+            {
+                SealOpenAnchors();
+            }
+
+            // Evaluate quality
+            int potentialConnections = CountPotentialConnectionsAcrossLevel();
+            int score = placedModules.Count * 10 + potentialConnections * 25;
+
+            bool passes = placedModules.Count >= minModulesAccept && potentialConnections >= minPotentialConnectionsAccept;
+            if (logGeneration)
+            {
+                Debug.Log($"[Gen] Attempt {attempt + 1}/{attempts}: modules={placedModules.Count}, potConns={potentialConnections}, score={score}, pass={passes}");
+            }
+
+            if (passes)
+            {
+                Debug.Log($"[Gen] Accepted attempt {attempt + 1} with {placedModules.Count} modules and {potentialConnections} potential connections.");
+                break; // keep this layout
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                // Snapshot the transforms so we can restore best if all fail
+                bestModules = new List<Transform>(placedModules);
+            }
+
+            if (attempt < attempts - 1)
+            {
+                // Try again with a different seed
+                continue;
+            }
         }
-
-        // Collect initial anchors
-        CollectAnchorsIntoList(startRoot, availableAnchors);
-
-        // Generate the level
-        GenerateFromAnchors();
 
         Debug.Log($"[Gen] Generation complete! Placed {placedModules.Count} modules");
     }
@@ -132,6 +228,34 @@ public class SimpleLevelGenerator : MonoBehaviour
         return start.transform;
     }
 
+    void AssignInitialBranches(Transform startRoot)
+    {
+        // Assign unique branch IDs to each direct child anchor under the start
+        var startAnchors = new List<Transform>();
+        CollectAnchorsIntoList(startRoot, startAnchors);
+        int nextId = 1;
+        for (int i = 0; i < startAnchors.Count; i++)
+        {
+            var a = startAnchors[i];
+            if (!a) continue;
+            anchorToBranchId[a] = nextId++;
+        }
+    }
+
+    int GetBranchIdForAnchor(Transform anchor)
+    {
+        if (!anchor) return 0;
+        if (anchorToBranchId.TryGetValue(anchor, out int id)) return id;
+        // Fallback: inherit from the closest ancestor anchor with an id
+        Transform t = anchor.parent;
+        while (t != null)
+        {
+            if (anchorToBranchId.TryGetValue(t, out id)) return id;
+            t = t.parent;
+        }
+        return 0;
+    }
+
     void CreateAnchor(Transform parent, string name, float yaw)
     {
         GameObject anchor = new GameObject(name);
@@ -167,8 +291,19 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             attempts++;
 
-            // Pick a random anchor
-            int anchorIndex = rng.Next(availableAnchors.Count);
+            // Pick an anchor, prioritizing cross-branch potential partners
+            int anchorIndex = 0;
+            if (prioritizeAnchorsThatCanConnect)
+            {
+                anchorIndex = FindIndexOfAnchorWithCrossBranchPartner(availableAnchors);
+                if (anchorIndex < 0)
+                    anchorIndex = FindIndexOfAnchorWithPartner(availableAnchors);
+                if (anchorIndex < 0) anchorIndex = rng.Next(availableAnchors.Count);
+            }
+            else
+            {
+                anchorIndex = rng.Next(availableAnchors.Count);
+            }
             Transform anchor = availableAnchors[anchorIndex];
 
             // Try to place a module
@@ -201,18 +336,49 @@ public class SimpleLevelGenerator : MonoBehaviour
         if (entryAnchor == null) return false;
 
         // Place the module
-        Transform placedModule = PlaceModule(prefab, entryAnchor, anchor);
+        Transform placedModule = PlaceModule(prefab, entryAnchor, anchor, out Transform placedEntryAnchor);
         if (placedModule == null) return false;
 
         // Add to placed modules
         placedModules.Add(placedModule);
+        nonStartPlacements++;
+        placementsSinceLastConnector++;
 
         // Collect new anchors from the placed module
         CollectAnchorsIntoList(placedModule, availableAnchors);
 
+        // Do not consider the consumed entry anchor for immediate reuse
+        if (placedEntryAnchor)
+        {
+            availableAnchors.Remove(placedEntryAnchor);
+        }
+
         if (logGeneration)
         {
             Debug.Log($"[Gen] Placed {prefab.name} at {placedModule.position}");
+        }
+
+        // Record hotspot for future bias
+        if (preferNearRecentConnections)
+        {
+            Vector3 h = anchor.position;
+            recentConnectionPoints.Add(h);
+            if (recentConnectionPoints.Count > recentConnectionPointsLimit)
+                recentConnectionPoints.RemoveAt(0);
+        }
+
+        // Update placement policy counters by prefab category
+        string nameLower = prefab.name.ToLowerInvariant();
+        bool isConnector = (connectorPrefabs != null && Array.Exists(connectorPrefabs, p => p && p.name == prefab.name));
+        bool isHall = (hallwayPrefabs != null && Array.Exists(hallwayPrefabs, p => p && p.name == prefab.name));
+        if (isConnector)
+        {
+            placementsSinceLastConnector = 0;
+            totalConnectorsPlaced++;
+        }
+        else if (isHall)
+        {
+            totalHallwaysPlaced++;
         }
 
         return true;
@@ -223,26 +389,113 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Simple rules: prefer hallways for long paths, connectors for branching
         float distanceFromStart = Vector3.Distance(anchor.position, Vector3.zero);
 
-        // If we're far from start, allow more variety
+        bool inHallwayPhase = nonStartPlacements < forceHallwayFirstSteps;
+        bool connectorOnCooldown = placementsSinceLastConnector < minPlacementsBetweenConnectors;
+        bool crossBranchPreferred = false;
+        var partner = FindPartnerAnchor(anchor);
+        if (partner != null)
+        {
+            int aId = GetBranchIdForAnchor(anchor);
+            int bId = GetBranchIdForAnchor(partner);
+            crossBranchPreferred = (aId != bId);
+        }
+
+        // If this anchor can connect, only prefer connector for cross-branch pairs
+        if (!inHallwayPhase && !connectorOnCooldown && preferConnectorWhenPartnerDetected && connectorPrefabs != null && connectorPrefabs.Length > 0)
+        {
+            if (partner != null && (crossBranchPreferred || !prioritizeAnchorsThatCanConnect))
+            {
+                return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
+            }
+        }
+
+        // If we're far from start, allow more variety (score-based with hotspot bias)
         if (distanceFromStart > maxBranchLength)
         {
-            // 60% hallway, 30% connector, 10% room
+            GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
+            GameObject conn = PickBestPrefab(connectorPrefabs, anchor, false);
+            GameObject room = PickBestPrefab(roomPrefabs, anchor, false);
+
             float roll = (float)rng.NextDouble();
-            if (roll < 0.6f && hallwayPrefabs != null && hallwayPrefabs.Length > 0)
-                return hallwayPrefabs[rng.Next(hallwayPrefabs.Length)];
-            else if (roll < 0.9f && connectorPrefabs != null && connectorPrefabs.Length > 0)
-                return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
-            else if (roomPrefabs != null && roomPrefabs.Length > 0)
-                return roomPrefabs[rng.Next(roomPrefabs.Length)];
+            if (roll < 0.6f && hall != null) return hall;
+            else if (roll < 0.9f && conn != null) return conn;
+            else if (room != null) return room;
         }
         else
         {
             // Near start: prefer hallways for snaking
-            if (hallwayPrefabs != null && hallwayPrefabs.Length > 0)
-                return hallwayPrefabs[rng.Next(hallwayPrefabs.Length)];
+            GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
+            if (hall != null) return hall;
+        }
+
+        // Fallback with policy: if connectors are on cooldown or hallway phase enforced, use hallways/rooms
+        if (inHallwayPhase || connectorOnCooldown)
+        {
+            GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
+            if (hall != null) return hall;
+            GameObject room = PickBestPrefab(roomPrefabs, anchor, false);
+            if (room != null) return room;
         }
 
         return null;
+    }
+
+    // Returns the index of an anchor in list that has a potential partner; -1 if none
+    int FindIndexOfAnchorWithPartner(List<Transform> list)
+    {
+        for (int i = 0; i < list.Count; i++)
+        {
+            if (FindPartnerAnchor(list[i]) != null)
+                return i;
+        }
+        return -1;
+    }
+
+    // Prefer anchors whose partner is in a different branch
+    int FindIndexOfAnchorWithCrossBranchPartner(List<Transform> list)
+    {
+        for (int i = 0; i < list.Count; i++)
+        {
+            var a = list[i];
+            var b = FindPartnerAnchor(a);
+            if (!a || !b) continue;
+            int aId = GetBranchIdForAnchor(a);
+            int bId = GetBranchIdForAnchor(b);
+            if (aId != bId) return i;
+        }
+        return -1;
+    }
+
+    // Finds any other anchor in the level that could connect to the provided one
+    Transform FindPartnerAnchor(Transform anchor)
+    {
+        var anchors = GatherAllAnchorsInLevel();
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            var other = anchors[i];
+            if (!other || other == anchor) continue;
+            if (!AreDifferentModules(anchor, other)) continue;
+            if (AnchorsCouldConnect(anchor, other)) return other;
+        }
+        return null;
+    }
+
+    Transform ChooseForwardMostAnchor(List<Transform> anchors)
+    {
+        Transform best = null;
+        float bestDot = float.NegativeInfinity;
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            var a = anchors[i];
+            if (!a) continue;
+            float d = Vector3.Dot(a.forward, Vector3.forward);
+            if (d > bestDot)
+            {
+                bestDot = d;
+                best = a;
+            }
+        }
+        return best ?? (anchors.Count > 0 ? anchors[0] : null);
     }
 
     // Finds a child transform on the prefab whose name contains "Anchor"; falls back to first child
@@ -264,36 +517,36 @@ public class SimpleLevelGenerator : MonoBehaviour
         return trans.childCount > 0 ? trans.GetChild(0) : null;
     }
 
-    Transform PlaceModule(GameObject prefab, Transform entryAnchorOnPrefab, Transform targetAnchor)
+    Transform PlaceModule(GameObject prefab, Transform entryAnchorOnPrefab, Transform targetAnchor, out Transform entryAnchorOnInstance)
     {
+        entryAnchorOnInstance = null;
         // Instantiate the prefab
         GameObject instance = Instantiate(prefab, Vector3.zero, Quaternion.identity, levelRoot);
         Transform instanceTransform = instance.transform;
 
         // Find the matching entry anchor on the instance by path
-        Transform entryAnchorOnInstance = FindCorrespondingTransform(instanceTransform, entryAnchorOnPrefab);
+        entryAnchorOnInstance = FindCorrespondingTransform(instanceTransform, entryAnchorOnPrefab);
         if (!entryAnchorOnInstance)
         {
             // Fallback: try again by name search
             entryAnchorOnInstance = FindEntryAnchorOnPrefab(instance);
         }
 
-        // Align the entry anchor to the target anchor
-        AlignModule(instanceTransform, entryAnchorOnInstance, targetAnchor);
+        // Align the entry anchor to the target anchor (yaw-only to prevent roll/pitch)
+        AlignModuleYawOnly(instanceTransform, entryAnchorOnInstance, targetAnchor, snapYawTo30);
 
-        // Snap to lattice if enabled
-        if (snapToLattice)
+        // Snap to lattice only if explicitly allowed for attached modules, then re-translate to keep anchors touching
+        if (snapToLattice && snapAttachedToLattice)
         {
+            Vector3 before = entryAnchorOnInstance.position;
             instanceTransform.position = SnapToLattice(instanceTransform.position);
+            Vector3 after = entryAnchorOnInstance.position;
+            instanceTransform.position += (targetAnchor.position - after); // preserve contact
         }
 
-        if (snapYawTo30)
-        {
-            SnapYawTo30(instanceTransform);
-        }
-
-        // Check if this placement is valid (simple distance check)
-        if (!IsValidPlacement(instanceTransform))
+        // Check if this placement is valid (simple distance check, ignoring the module that owns targetAnchor)
+        Transform hostModule = GetModuleRootForAnchor(targetAnchor);
+        if (!IsValidPlacement(instanceTransform, hostModule))
         {
 #if UNITY_EDITOR
             DestroyImmediate(instance);
@@ -303,7 +556,30 @@ public class SimpleLevelGenerator : MonoBehaviour
             return null;
         }
 
+        // Propagate branch ID from the consumed target anchor into the new module's anchors
+        int branchId = GetBranchIdForAnchor(targetAnchor);
+        var newAnchors = new List<Transform>();
+        CollectAnchorsIntoList(instanceTransform, newAnchors);
+        for (int i = 0; i < newAnchors.Count; i++)
+        {
+            var a = newAnchors[i];
+            if (!a || a == entryAnchorOnInstance) continue; // skip the consumed entry
+            anchorToBranchId[a] = branchId;
+        }
+
         return instanceTransform;
+    }
+
+    // Ascend from an arbitrary anchor to the direct child of levelRoot (the owning module)
+    Transform GetModuleRootForAnchor(Transform anchor)
+    {
+        if (!anchor) return null;
+        Transform t = anchor;
+        while (t.parent != null && t.parent != levelRoot)
+        {
+            t = t.parent;
+        }
+        return t;
     }
 
     // Try to find the same transform on the instantiated object by rebuilding a relative path
@@ -332,19 +608,43 @@ public class SimpleLevelGenerator : MonoBehaviour
         return current;
     }
 
-    void AlignModule(Transform moduleRoot, Transform entryAnchor, Transform targetAnchor)
+    void AlignModuleYawOnly(Transform moduleRoot, Transform entryAnchor, Transform targetAnchor, bool snapYaw)
     {
         if (!entryAnchor) entryAnchor = moduleRoot; // safety
 
-        // Rotation that makes entryAnchor forward match -targetAnchor.forward and up match world up
-        Quaternion rotToMatch = Quaternion.FromToRotation(entryAnchor.forward, -targetAnchor.forward);
-        Quaternion newRot = rotToMatch * moduleRoot.rotation;
+        // Flattened forward vectors (XZ only)
+        Vector3 entryF = Vector3.ProjectOnPlane(entryAnchor.forward, Vector3.up);
+        if (entryF.sqrMagnitude < 1e-6f) entryF = entryAnchor.forward;
+        Vector3 targetF = Vector3.ProjectOnPlane(-targetAnchor.forward, Vector3.up);
+        if (targetF.sqrMagnitude < 1e-6f) targetF = -targetAnchor.forward;
 
-        // Position so entryAnchor lands exactly on targetAnchor
-        Vector3 entryWorldAfterRot = rotToMatch * (entryAnchor.position - moduleRoot.position) + moduleRoot.position;
-        Vector3 newPos = moduleRoot.position + (targetAnchor.position - entryWorldAfterRot);
+        // Compute yaw delta to align entry forward to -target forward
+        float deltaYaw = Vector3.SignedAngle(entryF, targetF, Vector3.up);
+        Vector3 pivot = entryAnchor.position;
 
-        moduleRoot.SetPositionAndRotation(newPos, newRot);
+        // Rotate module around the entry anchor pivot by delta yaw
+        RotateAroundPivot(moduleRoot, pivot, Quaternion.AngleAxis(deltaYaw, Vector3.up));
+
+        // Optional snapping to nearest 30 degrees, also around the entry pivot
+        if (snapYaw)
+        {
+            float currentYaw = moduleRoot.eulerAngles.y;
+            float snappedYaw = Mathf.Round(currentYaw / 30f) * 30f;
+            float snapDelta = Mathf.DeltaAngle(currentYaw, snappedYaw);
+            RotateAroundPivot(moduleRoot, pivot, Quaternion.AngleAxis(snapDelta, Vector3.up));
+        }
+
+        // Re-translate so the entry anchor lands exactly on target anchor
+        Vector3 offset = targetAnchor.position - entryAnchor.position;
+        moduleRoot.position += offset;
+    }
+
+    void RotateAroundPivot(Transform t, Vector3 pivot, Quaternion delta)
+    {
+        Vector3 dir = t.position - pivot;
+        dir = delta * dir;
+        t.position = pivot + dir;
+        t.rotation = delta * t.rotation;
     }
 
     Vector3 SnapToLattice(Vector3 worldPos)
@@ -355,20 +655,13 @@ public class SimpleLevelGenerator : MonoBehaviour
         return new Vector3(x, worldPos.y, z);
     }
 
-    void SnapYawTo30(Transform t)
-    {
-        Vector3 euler = t.eulerAngles;
-        euler.x = 0f; euler.z = 0f;
-        euler.y = Mathf.Round(euler.y / 30f) * 30f;
-        t.rotation = Quaternion.Euler(euler);
-    }
-
-    bool IsValidPlacement(Transform newModule)
+    bool IsValidPlacement(Transform newModule, Transform ignoreModule)
     {
         // Simple distance check: ensure minimum distance from all other modules
         for (int i = 0; i < placedModules.Count; i++)
         {
             Transform existing = placedModules[i];
+            if (ignoreModule && existing == ignoreModule) continue;
             float distance = Vector3.Distance(newModule.position, existing.position);
             if (distance < minModuleDistance)
             {
@@ -434,6 +727,143 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             var anchor = availableAnchors[i];
             if (anchor) Gizmos.DrawWireCube(anchor.position, Vector3.one * 0.5f);
+        }
+
+        // Visualize potential connections
+        Gizmos.color = Color.cyan;
+        var allAnchors = GatherAllAnchorsInLevel();
+        for (int i = 0; i < allAnchors.Count; i++)
+        {
+            for (int j = i + 1; j < allAnchors.Count; j++)
+            {
+                var a = allAnchors[i];
+                var b = allAnchors[j];
+                if (!a || !b) continue;
+                if (!AreDifferentModules(a, b)) continue;
+                if (AnchorsCouldConnect(a, b))
+                {
+                    Gizmos.DrawLine(a.position, b.position);
+                }
+            }
+        }
+    }
+
+    // --- Connection / Quality helpers ---
+    int CountPotentialConnectionsAcrossLevel()
+    {
+        var anchors = GatherAllAnchorsInLevel();
+        int count = 0;
+        for (int i = 0; i < anchors.Count; i++)
+        {
+            for (int j = i + 1; j < anchors.Count; j++)
+            {
+                var a = anchors[i]; var b = anchors[j];
+                if (!a || !b) continue;
+                if (!AreDifferentModules(a, b)) continue;
+                if (AnchorsCouldConnect(a, b)) count++;
+            }
+        }
+        return count;
+    }
+
+    List<Transform> GatherAllAnchorsInLevel()
+    {
+        var anchors = new List<Transform>();
+        if (!levelRoot) return anchors;
+        for (int i = 0; i < levelRoot.childCount; i++)
+        {
+            CollectAnchorsIntoList(levelRoot.GetChild(i), anchors);
+        }
+        return anchors;
+    }
+
+    bool AnchorsCouldConnect(Transform a, Transform b)
+    {
+        // Distance check (flattened to XZ)
+        Vector3 aXZ = new Vector3(a.position.x, 0f, a.position.z);
+        Vector3 bXZ = new Vector3(b.position.x, 0f, b.position.z);
+        float dist = Vector3.Distance(aXZ, bXZ);
+        if (dist > connectionDistance) return false;
+
+        // Facing check: forward vectors should be roughly opposite
+        float facingDot = Vector3.Dot(a.forward, -b.forward);
+        if (facingDot < connectionFacingDotThreshold) return false;
+        return true;
+    }
+
+    GameObject PickBestPrefab(GameObject[] candidates, Transform atAnchor, bool favorHighAnchorCount)
+    {
+        if (candidates == null || candidates.Length == 0) return null;
+        float bestScore = float.NegativeInfinity;
+        GameObject best = null;
+        for (int i = 0; i < candidates.Length; i++)
+        {
+            var p = candidates[i];
+            if (!p) continue;
+            float score = 0f;
+            if (preferNearRecentConnections && recentConnectionPoints.Count > 0)
+            {
+                // Positive score for being near any recent hotspot
+                float nearest = float.PositiveInfinity;
+                Vector3 pos = atAnchor.position;
+                for (int h = 0; h < recentConnectionPoints.Count; h++)
+                {
+                    float d = Vector3.Distance(pos, recentConnectionPoints[h]);
+                    if (d < nearest) nearest = d;
+                }
+                if (nearest <= hotspotRadius)
+                {
+                    score += hotspotBias * (1f - nearest / hotspotRadius);
+                }
+            }
+            if (favorHighAnchorCount)
+            {
+                score += 0.25f * GetAnchorCountForPrefab(p);
+            }
+            if (score > bestScore)
+            {
+                bestScore = score;
+                best = p;
+            }
+        }
+        return best ?? candidates[0];
+    }
+
+    int GetAnchorCountForPrefab(GameObject prefab)
+    {
+        if (!prefab) return 0;
+        if (prefabToAnchorCount.TryGetValue(prefab, out int cached)) return cached;
+        int count = 0;
+        var queue = new Queue<Transform>();
+        queue.Enqueue(prefab.transform);
+        while (queue.Count > 0)
+        {
+            var t = queue.Dequeue();
+            if (t != prefab.transform && t.name.IndexOf("Anchor", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                count++;
+            }
+            for (int i = 0; i < t.childCount; i++) queue.Enqueue(t.GetChild(i));
+        }
+        prefabToAnchorCount[prefab] = count;
+        return count;
+    }
+
+    bool AreDifferentModules(Transform a, Transform b)
+    {
+        return GetModuleRootForAnchor(a) != GetModuleRootForAnchor(b);
+    }
+
+    void SealOpenAnchors()
+    {
+        if (doorCapPrefab == null) return;
+        // Use currently available anchors as open ends
+        for (int i = 0; i < availableAnchors.Count; i++)
+        {
+            var a = availableAnchors[i];
+            if (!a) continue;
+            var cap = Instantiate(doorCapPrefab, a.position, a.rotation, levelRoot);
+            cap.name = $"DoorCap_{i}";
         }
     }
 }
