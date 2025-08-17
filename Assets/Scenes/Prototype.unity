@@ -269,40 +269,31 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0327765c184573945a621526b67fe357, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  seed: 0
+  randomizeSeed: 1
+  maxModules: 50
   levelRoot: {fileID: 2114845929}
   startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
   startIsVirtual: 0
-  requiredExitsFromStart: 1
-  forcedSnakeCount: 2
-  forcedSnakeLength: 6
-  connectorWhitelist: []
-  hallwayWhitelist: []
-  cellSize: 2.5
-  snapYawTo30: 1
-  snapPosToLattice: 1
-  placementCollisionMask:
-    serializedVersion: 2
-    m_Bits: 8
-  overlapPadding: 0.02
-  allowPortalOverlap: 1
-  autoGenerateOnPlay: 1
-  randomizeSeed: 1
-  seed: 0
-  maxPlacements: 120
-  verboseSelection: 0
-  logSteps: 1
-  roomPrefabs:
+  hallwayPrefabs:
   - {fileID: 3788417896623736208, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
   - {fileID: 4110846225549992691, guid: 224aecb087cb6d945802809a28eb0bc8, type: 3}
   - {fileID: 1425017246146753035, guid: 911264d8608a18045a4de1c80761d0c4, type: 3}
   - {fileID: 6324504833216080275, guid: 8851c90fd3392084a93a5ee3254df706, type: 3}
+  - {fileID: 7100526239699113137, guid: 26665d39f3ff6194187253035c807c37, type: 3}
+  connectorPrefabs:
   - {fileID: 8137861740356237055, guid: 4cb11195ae782884ba8e715a974a3c9f, type: 3}
-  doorTriggerMask:
-    serializedVersion: 2
-    m_Bits: 0
-  doorTriggerLayer:
-    serializedVersion: 2
-    m_Bits: 0
+  roomPrefabs: []
+  cellSize: 2.5
+  snapToLattice: 1
+  snapYawTo30: 1
+  minModuleDistance: 8
+  maxBranchLength: 8
+  maxSnakeLength: 6
+  showDebugInfo: 0
+  logGeneration: 0
+  generateButton: 1
+  clearButton: 0
 --- !u!4 &4863074421176225970
 Transform:
   m_ObjectHideFlags: 0

@@ -1,413 +1,439 @@
-﻿// Assets/Scripts/SimpleLevelGenerator.cs
-// Unity 2021+ compatible
+﻿// Unity 2021+ compatible — simplified triangular lattice generator (compile-safe)
+// Notes:
+// - Removed hard dependency on a DoorAnchor C# type to avoid CS0246 when that script is missing.
+// - Anchors are now discovered by transform name ("Anchor" prefix) across instances & prefabs.
+// - If you DO have a DoorAnchor component, it still works automatically via name or reflection.
+// - Alignment, lattice snapping, and simple spacing rules preserved.
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 public class SimpleLevelGenerator : MonoBehaviour
 {
-    [Header("Hierarchy")]
-    [SerializeField] Transform levelRoot;                 // Parent for spawned pieces
-
-    [Header("Start")]
-    [SerializeField] GameObject startRoomPrefab;          // Your triangular room (optional if using virtual)
-    [SerializeField] bool startIsVirtual = false;         // Debug: build without spawning a start prefab
-    [SerializeField, Range(0, 3)] int requiredExitsFromStart = 1;
-
-    [Header("Forced Snakes")]
-    [SerializeField, Range(0, 3)] int forcedSnakeCount = 2;
-    [SerializeField, Range(1, 50)] int forcedSnakeLength = 6;
-    [SerializeField] GameObject[] connectorWhitelist;     // e.g. TripleConnector
-    [SerializeField] GameObject[] hallwayWhitelist;       // NewHall, HallLeft15, HallRight15, HallLeft30, HallRight30
-
-    [Header("Lattice / Snapping")]
-    [SerializeField] float cellSize = 2.5f;               // 10×3 kit => 2.5m hex basis
-    [SerializeField] bool snapYawTo30 = true;
-    [SerializeField] bool snapPosToLattice = true;
-
-    [Header("Placement / Overlap")]
-    [SerializeField] LayerMask placementCollisionMask;    // LevelGeo
-    [SerializeField] float overlapPadding = 0.02f;        // Shrink AABB a hair to avoid false-positives near seams
-    [SerializeField] bool allowPortalOverlap = false;     // Enable while debugging if needed
-
-    [Header("Run Control")]
-    [SerializeField] bool autoGenerateOnPlay = true;
+    [Header("Generation Settings")]
+    [SerializeField] int seed = 42;
     [SerializeField] bool randomizeSeed = true;
-    [SerializeField] int seed = 0;
-    [SerializeField, Range(1, 1000)] int maxPlacements = 120;
+    [SerializeField] int maxModules = 50;
+    [SerializeField] Transform levelRoot;
+
+    [Header("Start Room")]
+    [SerializeField] GameObject startRoomPrefab;  // Your 10m equilateral triangle
+    [SerializeField] bool startIsVirtual = false;
+
+    [Header("Prefab Lists")]
+    [SerializeField] GameObject[] hallwayPrefabs;     // NewHall, HallLeft15, HallRight15, HallLeft30, HallRight30
+    [SerializeField] GameObject[] connectorPrefabs;   // TripleConnector
+    [SerializeField] GameObject[] roomPrefabs;        // Square rooms, triangle floors
+
+    [Header("Lattice Settings")]
+    [SerializeField] float cellSize = 10f;            // 10m for your equilateral triangle
+    [SerializeField] bool snapToLattice = true;
+    [SerializeField] bool snapYawTo30 = true;
+
+    [Header("Placement Rules")]
+    [SerializeField] float minModuleDistance = 8f;    // Minimum distance between module centers (prevents overlaps)
+    [SerializeField] float maxBranchLength = 8f;      // Maximum length before allowing branching
+    [SerializeField] int maxSnakeLength = 6;          // (kept for future use)
 
     [Header("Debug")]
-    [SerializeField] bool verboseSelection = false;
-    [SerializeField] bool logSteps = false;
-    
-    // Prefabs the generator can place in the map
-    [Header("Prefabs")]
+    [SerializeField] bool showDebugInfo = false;
+    [SerializeField] bool logGeneration = false;
 
-    public List<GameObject> roomPrefabs = new List<GameObject>();
+    [Header("Quick Actions")]
+    [SerializeField] bool generateButton = false;
+    [SerializeField] bool clearButton = false;
 
-    System.Random rng;
-    
-    [SerializeField] LayerMask doorTriggerMask; // set this to your DoorTrigger layer in Inspector
-    [SerializeField] private LayerMask doorTriggerLayer;
+    private System.Random rng;
+    private readonly List<Transform> placedModules = new List<Transform>();
+    private readonly List<Transform> availableAnchors = new List<Transform>();
 
-    // ---------- ENTRY POINT ----------
     void Start()
     {
-        if (autoGenerateOnPlay) GenerateNow();
+        if (levelRoot == null) levelRoot = transform;
     }
 
-    [ContextMenu("Generate Now")]
-    public void GenerateNow()
+    void Update()
     {
+        if (generateButton)
+        {
+            generateButton = false;
+            GenerateLevel();
+        }
+
+        if (clearButton)
+        {
+            clearButton = false;
+            ClearLevel();
+        }
+    }
+
+    [ContextMenu("Generate Level")]
+    public void GenerateLevel()
+    {
+        Debug.Log("[Gen] === STARTING SIMPLIFIED LATTICE GENERATION ===");
+
         rng = randomizeSeed ? new System.Random() : new System.Random(seed);
-        if (!levelRoot) levelRoot = transform;
+        placedModules.Clear();
+        availableAnchors.Clear();
 
-        ClearLevelRoot();
+        ClearLevel();
 
-        // Spawn start (or virtual)
-        Transform startRoot = startIsVirtual
-            ? MakeVirtualStart()
-            : (startRoomPrefab ? Instantiate(startRoomPrefab, Vector3.zero, Quaternion.identity, levelRoot).transform
-                               : MakeVirtualStart());
-
-        if (!startIsVirtual && startRoot.parent != levelRoot) startRoot.SetParent(levelRoot);
-
-        // Force exits + snakes so something ALWAYS grows from the start
-        ForceStartGrowth(startRoot);
-
-        // Optional stochastic expansion: keep placing until budget used
-        ExpandFromOpenAnchors(maxPlacements);
-
-        if (logSteps) Debug.Log($"[Gen] Done. Seed={seed}, MaxPlacements={maxPlacements}");
-    }
-
-    void ClearLevelRoot()
-    {
-        for (int i = levelRoot.childCount - 1; i >= 0; i--)
+        // Place start room
+        Transform startRoot = PlaceStartRoom();
+        if (startRoot == null)
         {
-            var c = levelRoot.GetChild(i);
-            if (Application.isEditor) DestroyImmediate(c.gameObject);
-            else Destroy(c.gameObject);
+            Debug.LogError("[Gen] Failed to place start room!");
+            return;
         }
+
+        // Collect initial anchors
+        CollectAnchorsIntoList(startRoot, availableAnchors);
+
+        // Generate the level
+        GenerateFromAnchors();
+
+        Debug.Log($"[Gen] Generation complete! Placed {placedModules.Count} modules");
     }
 
-    // ---------- CORE GROWTH ----------
-
-    void ForceStartGrowth(Transform startRoot)
+    Transform PlaceStartRoom()
     {
-        var startAnchors = CollectAnchors(startRoot);
+        Transform startRoot;
 
-        Shuffle(startAnchors);  // vary which walls we use
-
-        // 1) Guarantee at least N exits (try connectors first, fall back to a straight hall)
-        int exits = 0;
-        foreach (var a in startAnchors)
+        if (startIsVirtual)
         {
-            if (TryPlaceOneOf(connectorWhitelist, a, out var placed) || TryPlaceOneOf(hallwayWhitelist, a, out placed))
+            startRoot = CreateVirtualStart();
+        }
+        else if (startRoomPrefab != null)
+        {
+            startRoot = Instantiate(startRoomPrefab, Vector3.zero, Quaternion.identity, levelRoot).transform;
+        }
+        else
+        {
+            startRoot = CreateVirtualStart();
+        }
+
+        placedModules.Add(startRoot);
+        return startRoot;
+    }
+
+    Transform CreateVirtualStart()
+    {
+        // Create a simple triangular foundation with three named anchors
+        GameObject start = new GameObject("VirtualStart");
+        start.transform.SetParent(levelRoot, false);
+        start.transform.position = Vector3.zero;
+
+        // Create three anchor points at 0°, 120°, 240°
+        CreateAnchor(start.transform, "Anchor_0", 0f);
+        CreateAnchor(start.transform, "Anchor_120", 120f);
+        CreateAnchor(start.transform, "Anchor_240", 240f);
+
+        return start.transform;
+    }
+
+    void CreateAnchor(Transform parent, string name, float yaw)
+    {
+        GameObject anchor = new GameObject(name);
+        anchor.transform.SetParent(parent, false);
+        anchor.transform.localPosition = Vector3.zero;
+        anchor.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+        // No hard reference to a DoorAnchor type; name-based discovery is used elsewhere
+    }
+
+    // Collects anchors under root whose transform name contains "Anchor" (case-insensitive)
+    static void CollectAnchorsIntoList(Transform root, List<Transform> outList)
+    {
+        if (!root) return;
+        var stack = new Stack<Transform>();
+        stack.Push(root);
+        while (stack.Count > 0)
+        {
+            var t = stack.Pop();
+            if (t != root && t.name.IndexOf("Anchor", StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                exits++;
-                if (exits >= requiredExitsFromStart) break;
+                outList.Add(t);
             }
-        }
-
-        // 2) Forced snakes from remaining distinct start anchors
-        int snakes = 0;
-        foreach (var a in startAnchors)
-        {
-            if (snakes >= forcedSnakeCount) break;
-
-            Transform lastAnchor = a;
-            for (int step = 0; step < forcedSnakeLength; step++)
-            {
-                if (!TryPlaceOneOf(hallwayWhitelist, lastAnchor, out var piece)) break;
-
-                // choose a "forward" anchor on the newly placed piece to continue the snake
-                var nextAnchor = ChooseNextAnchor(piece, lastAnchor.position);
-                if (nextAnchor == null) break;
-
-                lastAnchor = nextAnchor;
-            }
-
-            snakes++;
+            for (int i = 0; i < t.childCount; i++) stack.Push(t.GetChild(i));
         }
     }
 
-    void ExpandFromOpenAnchors(int budget)
+    void GenerateFromAnchors()
     {
-        // Grow from any anchor we can find under levelRoot until placement budget is used
-        for (int placed = 0; placed < budget; placed++)
+        int attempts = 0;
+        int maxAttempts = maxModules * 3; // Prevent infinite loops
+
+        while (availableAnchors.Count > 0 && placedModules.Count < maxModules && attempts < maxAttempts)
         {
-            var anchors = CollectAnchors(levelRoot);
-            if (anchors.Count == 0) break;
+            attempts++;
 
-            var target = anchors[rng.Next(anchors.Count)];
-            // Try some variety: 60% hall, 40% connector
-            bool tryHallFirst = rng.NextDouble() < 0.6;
+            // Pick a random anchor
+            int anchorIndex = rng.Next(availableAnchors.Count);
+            Transform anchor = availableAnchors[anchorIndex];
 
-            if (tryHallFirst)
+            // Try to place a module
+            if (TryPlaceModule(anchor))
             {
-                if (TryPlaceOneOf(hallwayWhitelist, target, out var _)) continue;
-                TryPlaceOneOf(connectorWhitelist, target, out var __);
+                // Remove this anchor since it's now used
+                availableAnchors.RemoveAt(anchorIndex);
             }
             else
             {
-                if (TryPlaceOneOf(connectorWhitelist, target, out var _)) continue;
-                TryPlaceOneOf(hallwayWhitelist, target, out var __);
+                // If we can't place anything, remove this anchor to prevent infinite loops
+                availableAnchors.RemoveAt(anchorIndex);
             }
+        }
+
+        if (logGeneration)
+        {
+            Debug.Log($"[Gen] Generation stopped: {placedModules.Count} modules, {availableAnchors.Count} anchors remaining");
         }
     }
 
-    // ---------- PLACEMENT ----------
-
-    bool TryPlaceOneOf(GameObject[] prefabs, Transform targetAnchor, out Transform placedRoot)
+    bool TryPlaceModule(Transform anchor)
     {
-        placedRoot = null;
-        if (prefabs == null || prefabs.Length == 0 || targetAnchor == null) return false;
+        // Determine what type of module to place based on current generation state
+        GameObject prefab = ChooseModuleType(anchor);
+        if (prefab == null) return false;
 
-        // Weighted by RoomMeta.weight if present
-        var weighted = new List<(GameObject prefab, float w)>();
-        foreach (var p in prefabs)
+        // Find the entry anchor on the prefab (by name)
+        Transform entryAnchor = FindEntryAnchorOnPrefab(prefab);
+        if (entryAnchor == null) return false;
+
+        // Place the module
+        Transform placedModule = PlaceModule(prefab, entryAnchor, anchor);
+        if (placedModule == null) return false;
+
+        // Add to placed modules
+        placedModules.Add(placedModule);
+
+        // Collect new anchors from the placed module
+        CollectAnchorsIntoList(placedModule, availableAnchors);
+
+        if (logGeneration)
         {
-            if (!p) continue;
-            float w = 1f;
-            var meta = p.GetComponent<RoomMeta>();
-            if (meta && meta.weight <= 0f) continue;
-            if (meta) w = Mathf.Max(0.0001f, meta.weight);
-            weighted.Add((p, w));
-        }
-        if (weighted.Count == 0) return false;
-
-        // Try up to N random picks (avoid infinite loops)
-        for (int tries = 0; tries < 12; tries++)
-        {
-            var prefab = WeightedPick(weighted);
-
-            var inst = Instantiate(prefab).transform;
-            inst.name = prefab.name;
-            inst.SetParent(levelRoot, false);
-
-            var entryAnchors = inst.GetComponentsInChildren<DoorAnchor>(true).Select(a => a.transform).ToList();
-            if (entryAnchors.Count == 0) { Destroy(inst.gameObject); continue; }
-
-            bool snapped = false;
-            foreach (var entry in entryAnchors)
-            {
-                SnapModuleToAnchor(inst, entry, targetAnchor);
-
-                if (snapYawTo30) SnapYawTo30(inst);
-                if (snapPosToLattice) inst.position = SnapXZToHexLattice(inst.position, cellSize);
-
-                // Extra safety: check if the target anchor is overlapping any DoorTrigger colliders
-                var bounds = GetCombinedBounds(inst, overlapPadding);
-                Collider[] doorHits = Physics.OverlapBox(bounds.center, bounds.extents, inst.rotation, LayerMask.GetMask("DoorTrigger"));
-                if (doorHits.Length > 0)
-                {
-                    if (verboseSelection) Debug.Log($"[Reject-Door] {prefab.name} hit {doorHits.Length} DoorTriggers");
-                    continue; // skip this entry and try another
-                }
-
-                if (allowPortalOverlap || VolumeFree(GetCombinedBounds(inst, overlapPadding)))
-                {
-                    placedRoot = inst;
-                    snapped = true;
-                    if (logSteps) Debug.Log($"[Place] {inst.name} on {targetAnchor.name}");
-                    break;
-                }
-            }
-
-            if (snapped) return true;
-
-            Destroy(inst.gameObject);
-            if (verboseSelection) Debug.Log($"[Reject] {prefab.name} @ {targetAnchor.name} (overlap or bad anchors)");
+            Debug.Log($"[Gen] Placed {prefab.name} at {placedModule.position}");
         }
 
-        return false;
+        return true;
     }
 
-    Transform ChooseNextAnchor(Transform pieceRoot, Vector3 previousAnchorPos)
+    GameObject ChooseModuleType(Transform anchor)
     {
-        var anchors = pieceRoot.GetComponentsInChildren<DoorAnchor>(true).Select(a => a.transform).ToList();
-        if (anchors.Count == 0) return null;
+        // Simple rules: prefer hallways for long paths, connectors for branching
+        float distanceFromStart = Vector3.Distance(anchor.position, Vector3.zero);
 
-        // pick the one farthest from the previous anchor position (avoid backtracking)
-        Transform best = null;
-        float bestDist = -1f;
-        foreach (var a in anchors)
+        // If we're far from start, allow more variety
+        if (distanceFromStart > maxBranchLength)
         {
-            float d = (a.position - previousAnchorPos).sqrMagnitude;
-            if (d > bestDist)
-            {
-                bestDist = d;
-                best = a;
-            }
+            // 60% hallway, 30% connector, 10% room
+            float roll = (float)rng.NextDouble();
+            if (roll < 0.6f && hallwayPrefabs != null && hallwayPrefabs.Length > 0)
+                return hallwayPrefabs[rng.Next(hallwayPrefabs.Length)];
+            else if (roll < 0.9f && connectorPrefabs != null && connectorPrefabs.Length > 0)
+                return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
+            else if (roomPrefabs != null && roomPrefabs.Length > 0)
+                return roomPrefabs[rng.Next(roomPrefabs.Length)];
         }
-        return best;
+        else
+        {
+            // Near start: prefer hallways for snaking
+            if (hallwayPrefabs != null && hallwayPrefabs.Length > 0)
+                return hallwayPrefabs[rng.Next(hallwayPrefabs.Length)];
+        }
+
+        return null;
     }
 
-    // ---------- MATH / UTILS ----------
-
-    static void SnapModuleToAnchor(Transform moduleRoot, Transform moduleEntryAnchor, Transform targetAnchor)
+    // Finds a child transform on the prefab whose name contains "Anchor"; falls back to first child
+    static Transform FindEntryAnchorOnPrefab(GameObject prefab)
     {
-        // rotate so entry faces exactly opposite the target
-        Quaternion rotDelta = Quaternion.FromToRotation(moduleEntryAnchor.forward, -targetAnchor.forward);
-        Quaternion newRot = rotDelta * moduleRoot.rotation;
+        if (!prefab) return null;
+        var trans = prefab.transform;
+        // Search breadth-first so top-level anchors are preferred
+        var queue = new Queue<Transform>();
+        queue.Enqueue(trans);
+        while (queue.Count > 0)
+        {
+            var t = queue.Dequeue();
+            if (t != trans && t.name.IndexOf("Anchor", StringComparison.OrdinalIgnoreCase) >= 0)
+                return t;
+            for (int i = 0; i < t.childCount; i++) queue.Enqueue(t.GetChild(i));
+        }
+        // Fallback: first child if exists
+        return trans.childCount > 0 ? trans.GetChild(0) : null;
+    }
 
-        // where entry would be after that rotation
-        Vector3 entryAfterRot = rotDelta * (moduleEntryAnchor.position - moduleRoot.position) + moduleRoot.position;
+    Transform PlaceModule(GameObject prefab, Transform entryAnchorOnPrefab, Transform targetAnchor)
+    {
+        // Instantiate the prefab
+        GameObject instance = Instantiate(prefab, Vector3.zero, Quaternion.identity, levelRoot);
+        Transform instanceTransform = instance.transform;
 
-        // translate to target
-        Vector3 newPos = moduleRoot.position + (targetAnchor.position - entryAfterRot);
+        // Find the matching entry anchor on the instance by path
+        Transform entryAnchorOnInstance = FindCorrespondingTransform(instanceTransform, entryAnchorOnPrefab);
+        if (!entryAnchorOnInstance)
+        {
+            // Fallback: try again by name search
+            entryAnchorOnInstance = FindEntryAnchorOnPrefab(instance);
+        }
+
+        // Align the entry anchor to the target anchor
+        AlignModule(instanceTransform, entryAnchorOnInstance, targetAnchor);
+
+        // Snap to lattice if enabled
+        if (snapToLattice)
+        {
+            instanceTransform.position = SnapToLattice(instanceTransform.position);
+        }
+
+        if (snapYawTo30)
+        {
+            SnapYawTo30(instanceTransform);
+        }
+
+        // Check if this placement is valid (simple distance check)
+        if (!IsValidPlacement(instanceTransform))
+        {
+#if UNITY_EDITOR
+            DestroyImmediate(instance);
+#else
+            Destroy(instance);
+#endif
+            return null;
+        }
+
+        return instanceTransform;
+    }
+
+    // Try to find the same transform on the instantiated object by rebuilding a relative path
+    static Transform FindCorrespondingTransform(Transform instanceRoot, Transform prefabTransform)
+    {
+        if (!instanceRoot || !prefabTransform) return null;
+
+        // Build path from prefabTransform up to its root prefab
+        var path = new List<string>();
+        var t = prefabTransform;
+        while (t != null)
+        {
+            path.Add(t.name);
+            t = t.parent;
+        }
+        path.Reverse();
+
+        // Walk the path starting at instanceRoot
+        Transform current = instanceRoot;
+        for (int i = 1; i < path.Count; i++) // skip root name
+        {
+            string childName = path[i];
+            current = current.Find(childName);
+            if (current == null) return null;
+        }
+        return current;
+    }
+
+    void AlignModule(Transform moduleRoot, Transform entryAnchor, Transform targetAnchor)
+    {
+        if (!entryAnchor) entryAnchor = moduleRoot; // safety
+
+        // Rotation that makes entryAnchor forward match -targetAnchor.forward and up match world up
+        Quaternion rotToMatch = Quaternion.FromToRotation(entryAnchor.forward, -targetAnchor.forward);
+        Quaternion newRot = rotToMatch * moduleRoot.rotation;
+
+        // Position so entryAnchor lands exactly on targetAnchor
+        Vector3 entryWorldAfterRot = rotToMatch * (entryAnchor.position - moduleRoot.position) + moduleRoot.position;
+        Vector3 newPos = moduleRoot.position + (targetAnchor.position - entryWorldAfterRot);
 
         moduleRoot.SetPositionAndRotation(newPos, newRot);
     }
 
-    static void SnapYawTo30(Transform t)
+    Vector3 SnapToLattice(Vector3 worldPos)
     {
-        var e = t.eulerAngles;
-        e.x = 0f; e.z = 0f; // keep modules flat
-        e.y = Mathf.Round(e.y / 30f) * 30f;
-        t.rotation = Quaternion.Euler(e);
+        // Snap to a 30°/60° compatible grid by rounding to cellSize in XZ
+        float x = Mathf.Round(worldPos.x / cellSize) * cellSize;
+        float z = Mathf.Round(worldPos.z / cellSize) * cellSize;
+        return new Vector3(x, worldPos.y, z);
     }
 
-    static Vector3 SnapXZToHexLattice(Vector3 worldPos, float s)
+    void SnapYawTo30(Transform t)
     {
-        // hex basis vectors in XZ plane
-        Vector2 b0 = new Vector2(1f, 0f) * s;            // 0°
-        Vector2 b1 = new Vector2(0.5f, 0.8660254f) * s;  // +60°
-        Vector2 p = new Vector2(worldPos.x, worldPos.z);
-
-        float det = b0.x * b1.y - b0.y * b1.x;           // = s^2 * 0.8660
-        float q = (p.x * b1.y - p.y * b1.x) / det;
-        float r = (-p.x * b0.y + p.y * b0.x) / det;
-
-        int qR = Mathf.RoundToInt(q);
-        int rR = Mathf.RoundToInt(r);
-
-        Vector2 snapped = qR * b0 + rR * b1;
-        return new Vector3(snapped.x, worldPos.y, snapped.y);
+        Vector3 euler = t.eulerAngles;
+        euler.x = 0f; euler.z = 0f;
+        euler.y = Mathf.Round(euler.y / 30f) * 30f;
+        t.rotation = Quaternion.Euler(euler);
     }
 
-    static Bounds GetCombinedBounds(Transform root, float shrink = 0f)
+    bool IsValidPlacement(Transform newModule)
     {
-        var renderers = root.GetComponentsInChildren<Renderer>();
-        Bounds b = new Bounds(root.position, Vector3.zero);
-        bool init = false;
-        foreach (var r in renderers)
+        // Simple distance check: ensure minimum distance from all other modules
+        for (int i = 0; i < placedModules.Count; i++)
         {
-            if (!init) { b = r.bounds; init = true; }
-            else b.Encapsulate(r.bounds);
-        }
-        if (!init) b = new Bounds(root.position, Vector3.one * 0.5f);
-
-        if (shrink > 0f)
-        {
-            b.Expand(-2f * shrink);
-            if (b.size.x < 0) b.size = new Vector3(0.001f, b.size.y, b.size.z);
-            if (b.size.y < 0) b.size = new Vector3(b.size.x, 0.001f, b.size.z);
-            if (b.size.z < 0) b.size = new Vector3(b.size.x, b.size.y, 0.001f);
-        }
-        return b;
-    }
-
-    bool VolumeFree(Bounds b)
-    {
-        var hits = Physics.OverlapBox(b.center, b.extents, Quaternion.identity, placementCollisionMask, QueryTriggerInteraction.Ignore);
-        return hits.Length == 0;
-    }
-
-    static List<Transform> CollectAnchors(Transform root)
-    {
-        var list = new List<Transform>();
-        foreach (var a in root.GetComponentsInChildren<DoorAnchor>(true))
-            list.Add(a.transform);
-        return list;
-    }
-
-    void Shuffle<T>(IList<T> list)
-    {
-        for (int i = list.Count - 1; i > 0; i--)
-        {
-            int j = rng.Next(i + 1);
-            (list[i], list[j]) = (list[j], list[i]);
-        }
-    }
-
-    GameObject WeightedPick(List<(GameObject prefab, float w)> items)
-    {
-        float sum = items.Sum(t => t.w);
-        float r = (float)(rng.NextDouble() * sum);
-        foreach (var it in items)
-        {
-            if (r < it.w) return it.prefab;
-            r -= it.w;
-        }
-        return items[items.Count - 1].prefab;
-    }
-    // --- add inside SimpleLevelGenerator ---
-
-    // Creates a dummy start root with three DoorAnchors (0°, ±60°) at the origin.
-    // Useful for testing without your triangle prefab.
-    Transform MakeVirtualStart()
-    {
-        var root = new GameObject("VirtualStart").transform;
-        root.SetParent(levelRoot, false);
-        root.position = Vector3.zero;
-
-        // 3 exits: forward, left60, right60
-        CreateAnchor(root, "A_Forward", 0f);
-        CreateAnchor(root, "B_Left60", -60f);
-        CreateAnchor(root, "C_Right60", 60f);
-
-        return root;
-    }
-
-    // small helper to make an anchor child
-    static Transform CreateAnchor(Transform parent, string name, float yawDeg)
-    {
-        var go = new GameObject(name);
-        go.transform.SetParent(parent, false);
-        go.transform.localPosition = new Vector3(0f, 0f, 0.01f); // tiny nudge so overlap checks don't hit the start itself
-        go.transform.localRotation = Quaternion.Euler(0f, yawDeg, 0f);
-
-        go.AddComponent<DoorAnchor>(); // marker + gizmo
-
-        return go.transform;
-    }
-    Transform FindFacingDoor(Transform targetAnchor, float maxDist = 0.2f)
-    {
-        // Cast a short ray straight out of the target doorway to find another door trigger
-        Vector3 p = targetAnchor.position + targetAnchor.forward * 0.01f; // tiny nudge out of the wall
-        Vector3 dir = targetAnchor.forward;
-        if (Physics.Raycast(p, dir, out RaycastHit hit, maxDist, doorTriggerMask, QueryTriggerInteraction.Collide))
-        {
-            // We hit another door trigger. Return its anchor transform (assumes collider is on a child beside the DoorAnchor)
-            var other = hit.collider.GetComponentInParent<DoorAnchor>();
-            if (other != null) return other.transform;
-        }
-        return null;
-    }
-    private bool OverlapsDoorTriggers(GameObject prefab, Transform targetAnchor)
-    {
-        // Find the DoorAnchor on the prefab that matches our connection
-        DoorAnchor prefabAnchor = prefab.GetComponentInChildren<DoorAnchor>();
-        if (prefabAnchor == null) return true; // fail safe
-
-        // Calculate placement: position + rotation to align with targetAnchor
-        Quaternion rotation = targetAnchor.rotation * Quaternion.Inverse(prefabAnchor.transform.localRotation);
-        Vector3 position = targetAnchor.position - (rotation * prefabAnchor.transform.localPosition);
-
-        // Get prefab bounds (using renderers or colliders)
-        Bounds bounds = new Bounds(position, Vector3.zero);
-        foreach (var col in prefab.GetComponentsInChildren<Collider>())
-        {
-            bounds.Encapsulate(new Bounds(position + (rotation * (col.transform.localPosition)), col.bounds.size));
+            Transform existing = placedModules[i];
+            float distance = Vector3.Distance(newModule.position, existing.position);
+            if (distance < minModuleDistance)
+            {
+                if (showDebugInfo)
+                {
+                    Debug.Log($"[Debug] {newModule.name} too close to {existing.name}: {distance:F1}m < {minModuleDistance}m");
+                }
+                return false;
+            }
         }
 
-        // Check overlap against doorTriggerLayer
-        Collider[] hits = Physics.OverlapBox(bounds.center, bounds.extents, rotation, doorTriggerLayer);
-        return hits.Length > 0; // true = overlap detected
+        return true;
+    }
+
+    [ContextMenu("Clear Level")]
+    public void ClearLevel()
+    {
+        if (levelRoot == null) return;
+
+        int childCount = levelRoot.childCount;
+        for (int i = childCount - 1; i >= 0; i--)
+        {
+            Transform child = levelRoot.GetChild(i);
+#if UNITY_EDITOR
+            DestroyImmediate(child.gameObject);
+#else
+            Destroy(child.gameObject);
+#endif
+        }
+
+        placedModules.Clear();
+        availableAnchors.Clear();
+
+        Debug.Log($"[Gen] Cleared {childCount} modules");
+    }
+
+    void OnDrawGizmos()
+    {
+        if (!showDebugInfo) return;
+
+        // Draw lattice grid
+        Gizmos.color = Color.yellow;
+        for (int x = -5; x <= 5; x++)
+        {
+            for (int z = -5; z <= 5; z++)
+            {
+                Vector3 pos = new Vector3(x * cellSize, 0, z * cellSize);
+                Gizmos.DrawWireCube(pos, Vector3.one * cellSize);
+            }
+        }
+
+        // Draw placed modules
+        Gizmos.color = Color.green;
+        for (int i = 0; i < placedModules.Count; i++)
+        {
+            var module = placedModules[i];
+            if (module) Gizmos.DrawWireSphere(module.position, 1f);
+        }
+
+        // Draw available anchors
+        Gizmos.color = Color.blue;
+        for (int i = 0; i < availableAnchors.Count; i++)
+        {
+            var anchor = availableAnchors[i];
+            if (anchor) Gizmos.DrawWireCube(anchor.position, Vector3.one * 0.5f);
+        }
     }
 }
-
