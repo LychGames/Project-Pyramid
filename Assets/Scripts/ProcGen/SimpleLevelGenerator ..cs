@@ -88,6 +88,9 @@ public class SimpleLevelGenerator : MonoBehaviour
     // Cache for counting anchors per prefab
     private readonly Dictionary<GameObject, int> prefabToAnchorCount = new Dictionary<GameObject, int>();
 
+    // Replication hook: subscribers (e.g., networking) can listen for placements
+    public event System.Action<GameObject, Vector3, Quaternion, Transform> ModulePlaced;
+
     void Start()
     {
         if (levelRoot == null) levelRoot = transform;
@@ -380,6 +383,9 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             totalHallwaysPlaced++;
         }
+
+        // Notify replication listeners
+        ModulePlaced?.Invoke(prefab, placedModule.position, placedModule.rotation, placedModule);
 
         return true;
     }
