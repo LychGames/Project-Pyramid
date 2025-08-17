@@ -271,6 +271,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 6493842603085294388}
+  - component: {fileID: 742275331499673178}
   m_Layer: 0
   m_Name: NewHall
   m_TagString: Untagged
@@ -299,6 +300,26 @@ Transform:
   - {fileID: 2792026128945764396}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &742275331499673178
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7100526239699113137}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe443d9a9f925654c81b5f33c55df585, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  category: 1
+  connectsAll: 0
+  weight: 1
+  uniqueOnce: 0
+  maxCount: 0
+  clearancePadding: 0
+  isStartPrefab: 0
+  isEndPrefab: 0
 --- !u!1 &7288977643898402041
 GameObject:
   m_ObjectHideFlags: 0

@@ -388,6 +388,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 7931669777789548406}
+  - component: {fileID: 4748676012516669445}
   m_Layer: 3
   m_Name: HallRight30
   m_TagString: Untagged
@@ -416,6 +417,26 @@ Transform:
   - {fileID: 51424022618096057}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &4748676012516669445
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6324504833216080275}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe443d9a9f925654c81b5f33c55df585, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  category: 1
+  connectsAll: 0
+  weight: 0.6
+  uniqueOnce: 0
+  maxCount: 0
+  clearancePadding: 0
+  isStartPrefab: 0
+  isEndPrefab: 0
 --- !u!1 &6370455345452801237
 GameObject:
   m_ObjectHideFlags: 0

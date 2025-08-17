@@ -119,86 +119,6 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
---- !u!1 &598219551
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 598219553}
-  - component: {fileID: 598219552}
-  m_Layer: 0
-  m_Name: LevelGenerator
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!114 &598219552
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 598219551}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0327765c184573945a621526b67fe357, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
-  roomPrefabs:
-  - {fileID: 8380427059636603640, guid: 2cfef5ceb508ac649bd5fa4795fe3645, type: 3}
-  - {fileID: 3788417896623736208, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
-  - {fileID: 4110846225549992691, guid: 224aecb087cb6d945802809a28eb0bc8, type: 3}
-  - {fileID: 1425017246146753035, guid: 911264d8608a18045a4de1c80761d0c4, type: 3}
-  - {fileID: 6324504833216080275, guid: 8851c90fd3392084a93a5ee3254df706, type: 3}
-  - {fileID: 7100526239699113137, guid: 26665d39f3ff6194187253035c807c37, type: 3}
-  levelRoot: {fileID: 2114845929}
-  maxRooms: 100
-  autoGenerateOnPlay: 1
-  randomizeSeed: 1
-  seedInput: 0
-  cellSize: 2.5
-  snapYawTo30: 1
-  snapPosToLattice: 1
-  placementCollisionMask:
-    serializedVersion: 2
-    m_Bits: 8
-  allowPortalOverlap: 1
-  portalSize: {x: 0.05, y: 0.05}
-  portalSlabThickness: 0.02
-  disableOverlapForDebug: 0
-  corridorFirstSteps: 6
-  minHallsBetweenRooms: 2
-  preferTurnBias: 0.35
-  maxConsecutiveSamePrefab: 0
-  maxConsecutiveSameCategory: 0
-  hallwayClearance: 0.8
-  maxRoomsPlaced: 12
-  roomSpawnChance: 0.35
-  doorCapPrefab: {fileID: 0}
-  doorCapDepth: 0.1
-  sealOpenAnchorsAtEnd: 1
-  verboseSelection: 0
-  logSteps: 1
---- !u!4 &598219553
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 598219551}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.44128, y: 0.1, z: 3.22702}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1143035889
 GameObject:
   m_ObjectHideFlags: 0
@@ -337,10 +257,88 @@ MonoBehaviour:
   m_MinRegionArea: 2
   m_NavMeshData: {fileID: 0}
   m_BuildHeightMesh: 0
+--- !u!114 &3289519510042579351
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7499901212690659234}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0327765c184573945a621526b67fe357, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  levelRoot: {fileID: 2114845929}
+  startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
+  startIsVirtual: 0
+  requiredExitsFromStart: 1
+  forcedSnakeCount: 2
+  forcedSnakeLength: 6
+  connectorWhitelist: []
+  hallwayWhitelist: []
+  cellSize: 2.5
+  snapYawTo30: 1
+  snapPosToLattice: 1
+  placementCollisionMask:
+    serializedVersion: 2
+    m_Bits: 8
+  overlapPadding: 0.02
+  allowPortalOverlap: 1
+  autoGenerateOnPlay: 1
+  randomizeSeed: 1
+  seed: 0
+  maxPlacements: 120
+  verboseSelection: 0
+  logSteps: 1
+  roomPrefabs:
+  - {fileID: 3788417896623736208, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
+  - {fileID: 4110846225549992691, guid: 224aecb087cb6d945802809a28eb0bc8, type: 3}
+  - {fileID: 1425017246146753035, guid: 911264d8608a18045a4de1c80761d0c4, type: 3}
+  - {fileID: 6324504833216080275, guid: 8851c90fd3392084a93a5ee3254df706, type: 3}
+  - {fileID: 8137861740356237055, guid: 4cb11195ae782884ba8e715a974a3c9f, type: 3}
+  doorTriggerMask:
+    serializedVersion: 2
+    m_Bits: 0
+  doorTriggerLayer:
+    serializedVersion: 2
+    m_Bits: 0
+--- !u!4 &4863074421176225970
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7499901212690659234}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.44128, y: 0.1, z: 3.22702}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &7499901212690659234
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 4863074421176225970}
+  - component: {fileID: 3289519510042579351}
+  m_Layer: 0
+  m_Name: LevelGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
-  - {fileID: 598219553}
+  - {fileID: 4863074421176225970}
   - {fileID: 2114845929}
   - {fileID: 1143035891}

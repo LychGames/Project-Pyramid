@@ -1,31 +1,25 @@
+// Assets/Scripts/DoorAnchor.cs
+// Simple marker component + gizmo. Blue Z must point OUTWARD from the doorway.
+
 using UnityEngine;
 
-[System.Flags]
-public enum RoomCategory
-{
-    None = 0,
-    Hallway = 1 << 0,
-    Small = 1 << 1,
-    Medium = 1 << 2,
-    Large = 1 << 3,
-    Special = 1 << 4,
-    Summon = 1 << 5,
-    All = ~0
-}
-
-/// Place at the CENTER of each doorway. Blue Z must point OUT through the opening.
+[ExecuteAlways]
 public class DoorAnchor : MonoBehaviour
 {
-    [Tooltip("Which categories may attach here (bitmask).")]
-    public RoomCategory allowedTargets = RoomCategory.All;
+    public Color gizmoColor = new Color(0.2f, 0.8f, 1f, 0.75f);
+    public float gizmoSize = 0.25f;
 
-#if UNITY_EDITOR
-    private void OnDrawGizmosSelected()
+    void OnDrawGizmos()
     {
+        Gizmos.color = gizmoColor;
+        Gizmos.DrawWireCube(transform.position, new Vector3(gizmoSize, gizmoSize * 0.6f, gizmoSize));
+        // Draw forward arrow (blue)
+        var p = transform.position;
+        var f = transform.forward * (gizmoSize * 1.5f);
         Gizmos.color = Color.cyan;
-        Gizmos.DrawSphere(transform.position, 0.06f);
-        Gizmos.DrawRay(transform.position, transform.forward * 0.6f);
+        Gizmos.DrawLine(p, p + f);
+        Gizmos.DrawWireSphere(p + f, gizmoSize * 0.12f);
     }
-#endif
 }
+
 

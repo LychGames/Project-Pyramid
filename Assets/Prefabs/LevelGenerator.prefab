@@ -1,0 +1,82 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &4916396232400477638
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 8021632568459885270}
+  - component: {fileID: 110677567818710003}
+  m_Layer: 0
+  m_Name: LevelGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &8021632568459885270
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4916396232400477638}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.44128, y: 0.1, z: 3.22702}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &110677567818710003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4916396232400477638}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0327765c184573945a621526b67fe357, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
+  roomPrefabs:
+  - {fileID: 8137861740356237055, guid: 4cb11195ae782884ba8e715a974a3c9f, type: 3}
+  - {fileID: 3788417896623736208, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
+  - {fileID: 4110846225549992691, guid: 224aecb087cb6d945802809a28eb0bc8, type: 3}
+  - {fileID: 1425017246146753035, guid: 911264d8608a18045a4de1c80761d0c4, type: 3}
+  - {fileID: 6324504833216080275, guid: 8851c90fd3392084a93a5ee3254df706, type: 3}
+  - {fileID: 7100526239699113137, guid: 26665d39f3ff6194187253035c807c37, type: 3}
+  levelRoot: {fileID: 0}
+  maxRooms: 120
+  autoGenerateOnPlay: 1
+  randomizeSeed: 1
+  seedInput: 0
+  cellSize: 2.5
+  snapYawTo30: 1
+  snapPosToLattice: 1
+  placementCollisionMask:
+    serializedVersion: 2
+    m_Bits: 8
+  allowPortalOverlap: 1
+  portalSize: {x: 3, y: 4}
+  portalSlabThickness: 0.02
+  disableOverlapForDebug: 0
+  corridorFirstSteps: 6
+  minHallsBetweenRooms: 2
+  preferTurnBias: 0.35
+  maxConsecutiveSamePrefab: 0
+  maxConsecutiveSameCategory: 0
+  hallwayClearance: 0.8
+  maxRoomsPlaced: 12
+  roomSpawnChance: 0.35
+  doorCapPrefab: {fileID: 0}
+  doorCapDepth: 0.1
+  sealOpenAnchorsAtEnd: 1
+  verboseSelection: 0
+  logSteps: 1
