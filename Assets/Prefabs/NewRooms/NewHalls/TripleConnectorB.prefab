@@ -318,12 +318,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fe443d9a9f925654c81b5f33c55df585, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  category: 2
+  category: 1
   weight: 1
   connectionKind: 4
   subtype: 8
   anchorCount: 3
-  catalogWeight: 3
+  catalogWeight: 15
   depthGate: 1
   maxPerMap: 999
   isLandmark: 0

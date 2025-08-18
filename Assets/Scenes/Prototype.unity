@@ -284,7 +284,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   seed: 0
   randomizeSeed: 1
-  maxModules: 50
+  maxModules: 120
   levelRoot: {fileID: 2114845929}
   startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
   startIsVirtual: 0
@@ -304,6 +304,7 @@ MonoBehaviour:
   roomPrefabs:
   - {fileID: 202433006534595424, guid: eebacb422ed9a0b49937f5ad57db404d, type: 3}
   - {fileID: 645644820273830860, guid: 6932fe9359844d34d8bc28245e96b1b6, type: 3}
+  catalog: {fileID: 0}
   cellSize: 2.5
   snapToLattice: 1
   snapYawTo30: 1

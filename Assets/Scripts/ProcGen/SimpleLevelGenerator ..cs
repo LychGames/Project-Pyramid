@@ -25,6 +25,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] GameObject[] hallwayPrefabs;     // NewHall, HallLeft15, HallRight15, HallLeft30, HallRight30
     [SerializeField] GameObject[] connectorPrefabs;   // TripleConnector
     [SerializeField] GameObject[] roomPrefabs;        // Square rooms, triangle floors
+    [SerializeField] PlacementCatalog catalog;         // Optional: use catalog weights
 
     [Header("Lattice Settings")]
     [SerializeField] float cellSize = 10f;            // 10m for your equilateral triangle
@@ -95,6 +96,7 @@ public class SimpleLevelGenerator : MonoBehaviour
 
     // Replication hook: subscribers (e.g., networking) can listen for placements
     public event System.Action<GameObject, Vector3, Quaternion, Transform> ModulePlaced;
+    private int pendingCatalogEntryId = -1;
 
     void Start()
     {
@@ -168,6 +170,8 @@ public class SimpleLevelGenerator : MonoBehaviour
             {
                 SealOpenAnchors();
             }
+
+            
 
             // Evaluate quality
             int potentialConnections = CountPotentialConnectionsAcrossLevel();
@@ -454,20 +458,28 @@ public class SimpleLevelGenerator : MonoBehaviour
         branchHallsSinceBranch.TryGetValue(branchIdHere, out int hallsSinceBranch);
         bool branchAllowed = hallsSinceBranch >= minHallsBeforeBranch;
 
-        // If this anchor can connect, only prefer connector for cross-branch pairs and when branch is allowed
+        // PRIORITIZE LOOPING: if this anchor has a partner, try connectors FIRST (ignore branch gating)
+        if (partner != null && connectorPrefabs != null && connectorPrefabs.Length > 0)
+        {
+            // Try weighted junction first (triple connector), then fallback to any connector
+            var weightedConn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart);
+            if (weightedConn != null) return weightedConn;
+            return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
+        }
+
+        // Otherwise, allow branching connectors only when branch gating allows
         if (branchAllowed && !inHallwayPhase && !connectorOnCooldown && preferConnectorWhenPartnerDetected && connectorPrefabs != null && connectorPrefabs.Length > 0)
         {
-            if (partner != null && (crossBranchPreferred || !prioritizeAnchorsThatCanConnect))
-            {
-                return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
-            }
+            var weightedConn2 = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart);
+            if (weightedConn2 != null) return weightedConn2;
         }
 
         // If we're far from start, allow more variety (score-based with hotspot bias)
         if (distanceFromStart > maxBranchLength)
         {
             GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
-            GameObject conn = PickBestPrefab(connectorPrefabs, anchor, false);
+            GameObject conn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart) ??
+                              PickBestPrefab(connectorPrefabs, anchor, false);
             bool favorSmallMediumRooms = partner == null; // end-cap candidate far from start
             bool gateMediumRooms = loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms;
             GameObject room = PickBestRoomPrefab(anchor, favorSmallMediumRooms, gateMediumRooms);
@@ -482,8 +494,8 @@ public class SimpleLevelGenerator : MonoBehaviour
             }
             else
             {
-                if (roll < 0.5f && hall != null) return hall;
-                else if (roll < 0.8f && conn != null) return conn;
+                if (roll < 0.45f && hall != null) return hall;
+                else if (roll < 0.85f && conn != null) return conn; // boost connectors vs turns
                 else if (room != null) return room;
             }
         }
@@ -814,6 +826,8 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
     }
 
+    
+
     // --- Connection / Quality helpers ---
     int CountPotentialConnectionsAcrossLevel()
     {
@@ -860,6 +874,13 @@ public class SimpleLevelGenerator : MonoBehaviour
     GameObject PickBestPrefab(GameObject[] candidates, Transform atAnchor, bool favorHighAnchorCount)
     {
         if (candidates == null || candidates.Length == 0) return null;
+        // Try catalog first when available: respect per-subtype weights (e.g., connectors vs turns)
+        if (catalog != null)
+        {
+            // Try Junctions first when we’re allowed to branch
+            var e = catalog.PickWeighted(PlacementCatalog.HallSubtype.Junction3_V, nonStartPlacements, rng);
+            if (e != null && e.prefab != null) return e.prefab;
+        }
         float bestScore = float.NegativeInfinity;
         GameObject best = null;
         for (int i = 0; i < candidates.Length; i++)
@@ -913,6 +934,14 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
         prefabToAnchorCount[prefab] = count;
         return count;
+    }
+
+    GameObject PickWeightedFromCatalog(PlacementCatalog.HallSubtype subtype, float distanceFromStart)
+    {
+        if (catalog == null) return null;
+        var e = catalog.PickWeighted(subtype, nonStartPlacements, rng);
+        if (e == null || e.prefab == null) return null;
+        return e.prefab;
     }
 
     // Prefer small/medium rooms when asked, using RoomMeta subtype

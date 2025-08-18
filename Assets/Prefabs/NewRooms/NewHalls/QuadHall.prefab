@@ -590,7 +590,7 @@ MonoBehaviour:
   connectionKind: 1
   subtype: 6
   anchorCount: 4
-  catalogWeight: 6
+  catalogWeight: 4
   depthGate: 3
   maxPerMap: 2
   isLandmark: 0

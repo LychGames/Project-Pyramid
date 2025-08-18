@@ -1071,7 +1071,7 @@ MonoBehaviour:
   connectionKind: 3
   subtype: 5
   anchorCount: 3
-  catalogWeight: 4
-  depthGate: 2
-  maxPerMap: 999
+  catalogWeight: 1
+  depthGate: 5
+  maxPerMap: 10
   isLandmark: 0

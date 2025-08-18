@@ -434,7 +434,7 @@ MonoBehaviour:
   connectionKind: 1
   subtype: 4
   anchorCount: 2
-  catalogWeight: 8
+  catalogWeight: 3
   depthGate: 0
   maxPerMap: 999
   isLandmark: 0
@@ -650,6 +650,9 @@ MonoBehaviour:
   colliderSize: {x: 0.5, y: 2, z: 0.1}
   colliderCenter: {x: 0, y: 0, z: 0}
   autoManageCollider: 1
+  filterMode: 0
+  specificKind: 1
+  specificKinds: 
   canConnectTo: 010000000200000003000000040000000500000006000000
 --- !u!114 &1378544975499442972
 MonoBehaviour:
@@ -715,6 +718,9 @@ MonoBehaviour:
   colliderSize: {x: 0.5, y: 2, z: 0.1}
   colliderCenter: {x: 0, y: 0, z: 0}
   autoManageCollider: 1
+  filterMode: 0
+  specificKind: 1
+  specificKinds: 
   canConnectTo: 010000000200000003000000040000000500000006000000
 --- !u!114 &3866455688664391686
 MonoBehaviour:
