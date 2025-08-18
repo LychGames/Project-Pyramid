@@ -289,23 +289,27 @@ MonoBehaviour:
   startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
   startIsVirtual: 0
   hallwayPrefabs:
+  - {fileID: 8909149088169348352, guid: f5d6bcf9a94d4aa4fbaa090227d6c245, type: 3}
   - {fileID: 3788417896623736208, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
   - {fileID: 4110846225549992691, guid: 224aecb087cb6d945802809a28eb0bc8, type: 3}
   - {fileID: 1425017246146753035, guid: 911264d8608a18045a4de1c80761d0c4, type: 3}
   - {fileID: 6324504833216080275, guid: 8851c90fd3392084a93a5ee3254df706, type: 3}
   - {fileID: 7100526239699113137, guid: 26665d39f3ff6194187253035c807c37, type: 3}
   connectorPrefabs:
-  - {fileID: 8137861740356237055, guid: 4cb11195ae782884ba8e715a974a3c9f, type: 3}
+  - {fileID: 8636243694911918028, guid: 835d879909c4baa46b339c7d58321c2a, type: 3}
+  - {fileID: 1610342867267922345, guid: c9928e0dc5b97d947ad848ddc97fc080, type: 3}
+  - {fileID: 6186995812821802193, guid: 3c5c37601ea97b54097627d93af3edab, type: 3}
+  - {fileID: 2614292931710157305, guid: ded4befe881a70a44832b18ab6302417, type: 3}
   - {fileID: 4532723815890408064, guid: 633ac0d21648b1c48a72b2da294d0c05, type: 3}
-  - {fileID: 4216977420170569022, guid: be443b05729448b48b61b5e8e6fcf8df, type: 3}
-  - {fileID: 7471332385275255230, guid: 166c46bf0bec3ab40ad4f4109b12742e, type: 3}
-  roomPrefabs: []
+  roomPrefabs:
+  - {fileID: 202433006534595424, guid: eebacb422ed9a0b49937f5ad57db404d, type: 3}
+  - {fileID: 645644820273830860, guid: 6932fe9359844d34d8bc28245e96b1b6, type: 3}
   cellSize: 2.5
   snapToLattice: 1
   snapYawTo30: 1
   snapAttachedToLattice: 0
-  minModuleDistance: 8
-  maxBranchLength: 8
+  minModuleDistance: 10
+  maxBranchLength: 4
   maxSnakeLength: 6
   showDebugInfo: 0
   logGeneration: 0
@@ -320,16 +324,18 @@ MonoBehaviour:
   prioritizeAnchorsThatCanConnect: 1
   preferConnectorWhenPartnerDetected: 1
   limitStartAnchorsToOne: 0
-  doorCapPrefab: {fileID: 0}
-  sealOpenAnchorsAtEnd: 0
+  doorCapPrefab: {fileID: 1874334448926048651, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
+  sealOpenAnchorsAtEnd: 1
   disallowConsecutiveConnectors: 1
-  minPlacementsBetweenConnectors: 2
-  forceHallwayFirstSteps: 6
+  minPlacementsBetweenConnectors: 1
+  forceHallwayFirstSteps: 3
   preferNearRecentConnections: 1
   recentConnectionPointsLimit: 8
   hotspotRadius: 10
   hotspotBias: 1
   preferHighAnchorCountNearHotspot: 1
+  minHallsBeforeBranch: 3
+  minLoopConnectorsBeforeMediumRooms: 2
 --- !u!1 &3551985676194542737
 GameObject:
   m_ObjectHideFlags: 0

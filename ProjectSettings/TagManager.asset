@@ -5,6 +5,7 @@ TagManager:
   serializedVersion: 3
   tags:
   - Playerspawn
+  - DoorCap
   layers:
   - Default
   - TransparentFX
@@ -18,9 +19,9 @@ TagManager:
   - Props
   - Interactable
   - Projectile
-  - 
-  - 
-  - 
+  - Wall
+  - Floor
+  - Ceilling
   - 
   - 
   - 

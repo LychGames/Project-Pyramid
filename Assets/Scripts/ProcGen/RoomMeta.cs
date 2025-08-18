@@ -5,9 +5,40 @@ using UnityEngine;
 
 public enum RoomCategory { Start, Hallway, Junction, Room }
 
+// More granular connection kinds so anchors can whitelist compatible targets
+public enum ConnectionKind
+{
+    Start,
+    StraightHall,
+    Angled15Hall,
+    Angled30Hall,
+    TripConnHall,
+    TripConnHub,
+    Room,
+    StartRoom
+}
+
 public class RoomMeta : MonoBehaviour
 {
     public RoomCategory category = RoomCategory.Hallway;
     [Tooltip("Relative chance to pick this prefab when multiple are eligible.")]
     public float weight = 1f;
+
+    [Header("Connection Classification")]
+    [Tooltip("Granular type used by DoorAnchor.canConnectTo to filter compatible targets.")]
+    public ConnectionKind connectionKind = ConnectionKind.StraightHall;
+
+    [Header("Placement Catalog Metadata (edit here on the prefab)")]
+    [Tooltip("Subtype used by the generator/catalog for selection.")]
+    public PlacementCatalog.HallSubtype subtype = PlacementCatalog.HallSubtype.Straight;
+    [Tooltip("How many usable anchors this piece exposes once placed (2 = hallway, 3 = Y junction).")]
+    public int anchorCount = 2;
+    [Tooltip("Selection weight within its subtype pool.")]
+    public float catalogWeight = 1f;
+    [Tooltip("Minimum growth depth before this can appear.")]
+    public int depthGate = 0;
+    [Tooltip("Soft cap per map for this prefab id (catalog entry).")]
+    public int maxPerMap = 999;
+    [Tooltip("Special landmark piece (rare).")]
+    public bool isLandmark = false;
 }

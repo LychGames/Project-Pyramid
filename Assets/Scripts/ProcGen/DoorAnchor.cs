@@ -1,4 +1,4 @@
-// Assets/Scripts/DoorAnchor.cs
+﻿// Assets/Scripts/DoorAnchor.cs
 // Simple marker component + gizmo. Blue Z must point OUTWARD from the doorway.
 
 using UnityEngine;
@@ -14,55 +14,65 @@ public class DoorAnchor : MonoBehaviour
     [SerializeField] Vector3 colliderCenter = Vector3.zero;
     [SerializeField] bool autoManageCollider = true; // If off, your manual BoxCollider edits are preserved
     
+    public enum ConnectionFilterMode { All, Specific }
+
+    [Header("Connection Rules")]
+    [Tooltip("All = accepts any kind. Specific = only the selected kind.")]
+    public ConnectionFilterMode filterMode = ConnectionFilterMode.All;
+    [Tooltip("If filterMode = Specific, only this kind will be accepted.")]
+    public ConnectionKind specificKind = ConnectionKind.StraightHall;
+    [Tooltip("If filterMode = Specific, use this list to allow multiple kinds. If empty, 'specificKind' is used.")]
+    public ConnectionKind[] specificKinds = new ConnectionKind[0];
+    
+    // Legacy field retained for backward compatibility but hidden from Inspector
+    [HideInInspector]
+    public ConnectionKind[] canConnectTo = new ConnectionKind[0];
+    
     private BoxCollider doorCollider;
 
     void Awake()
     {
+        if (!autoManageCollider)
+        {
+            // Do not add a collider; just cache if one exists
+            doorCollider = GetComponent<BoxCollider>();
+            return;
+        }
+
         EnsureCollider();
-        if (autoManageCollider)
+        if (doorCollider != null)
         {
             ApplyFieldsToCollider();
-        }
-        else
-        {
-            // Keep your manual collider size/center; ensure trigger + optional layer
-            if (doorCollider != null)
-            {
-                doorCollider.isTrigger = true;
-                TrySetDoorTriggerLayer();
-                // Reflect current collider values back into fields so they persist
-                colliderSize = doorCollider.size;
-                colliderCenter = doorCollider.center;
-            }
         }
     }
 
     void OnValidate()
     {
         if (Application.isPlaying) return;
+
+#if UNITY_EDITOR
+        // Avoid editing prefab asset contents directly
+        if (UnityEditor.PrefabUtility.IsPartOfPrefabAsset(this)) return;
+#endif
+
+        if (!autoManageCollider)
+        {
+            // Do not add a collider; just cache if one exists
+            doorCollider = GetComponent<BoxCollider>();
+            return;
+        }
+
         EnsureCollider();
         if (doorCollider == null) return;
 
-        if (autoManageCollider)
-        {
-            ApplyFieldsToCollider();
-        }
-        else
-        {
-            // Preserve your manual edits and mirror them into the serialized fields
-            colliderSize = doorCollider.size;
-            colliderCenter = doorCollider.center;
-            doorCollider.isTrigger = true;
-            TrySetDoorTriggerLayer();
-        }
+        ApplyFieldsToCollider();
     }
 
     void EnsureCollider()
     {
         if (doorCollider == null)
             doorCollider = GetComponent<BoxCollider>();
-        if (doorCollider == null)
-            doorCollider = gameObject.AddComponent<BoxCollider>();
+        if (doorCollider == null) return;              // ← early out, no auto-add
         doorCollider.isTrigger = true;
         TrySetDoorTriggerLayer();
     }
@@ -74,6 +84,20 @@ public class DoorAnchor : MonoBehaviour
         doorCollider.size = colliderSize;
         doorCollider.center = colliderCenter;
         TrySetDoorTriggerLayer();
+    }
+
+    public bool Allows(ConnectionKind kind)
+    {
+        if (filterMode == ConnectionFilterMode.All) return true;
+        if (specificKinds != null && specificKinds.Length > 0)
+        {
+            for (int i = 0; i < specificKinds.Length; i++)
+            {
+                if (specificKinds[i] == kind) return true;
+            }
+            return false;
+        }
+        return kind == specificKind;
     }
 
     void TrySetDoorTriggerLayer()

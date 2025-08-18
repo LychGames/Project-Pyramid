@@ -87,6 +87,11 @@ public class SimpleLevelGenerator : MonoBehaviour
     private readonly List<Vector3> recentConnectionPoints = new List<Vector3>();
     // Cache for counting anchors per prefab
     private readonly Dictionary<GameObject, int> prefabToAnchorCount = new Dictionary<GameObject, int>();
+    // Track how many halls have been placed consecutively on each branch since last branch piece (connector)
+    private readonly Dictionary<int, int> branchHallsSinceBranch = new Dictionary<int, int>();
+    [SerializeField] private int minHallsBeforeBranch = 3; // required halls per branch before allowing branching
+    [SerializeField] private int minLoopConnectorsBeforeMediumRooms = 2; // gate medium rooms until some loops are formed
+    private int loopConnectorsPlaced = 0;
 
     // Replication hook: subscribers (e.g., networking) can listen for placements
     public event System.Action<GameObject, Vector3, Quaternion, Transform> ModulePlaced;
@@ -132,6 +137,8 @@ public class SimpleLevelGenerator : MonoBehaviour
             anchorToBranchId.Clear();
             recentConnectionPoints.Clear();
             prefabToAnchorCount.Clear();
+            branchHallsSinceBranch.Clear();
+            loopConnectorsPlaced = 0;
 
             ClearLevel();
 
@@ -334,6 +341,12 @@ public class SimpleLevelGenerator : MonoBehaviour
         GameObject prefab = ChooseModuleType(anchor);
         if (prefab == null) return false;
 
+        // Optional connection-kind compatibility: only proceed if target anchor allows this prefab's kind
+        if (!IsConnectionCompatible(prefab, anchor))
+        {
+            return false;
+        }
+
         // Find the entry anchor on the prefab (by name)
         Transform entryAnchor = FindEntryAnchorOnPrefab(prefab);
         if (entryAnchor == null) return false;
@@ -378,16 +391,46 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             placementsSinceLastConnector = 0;
             totalConnectorsPlaced++;
+            // Reset branch run for this branch
+            int b = GetBranchIdForAnchor(anchor);
+            branchHallsSinceBranch[b] = 0;
+            // If this connector tends towards another branch (cross-branch partner exists), treat as loop progress
+            var partnerHere = FindPartnerAnchor(anchor);
+            if (partnerHere != null)
+            {
+                int aId = GetBranchIdForAnchor(anchor);
+                int bId2 = GetBranchIdForAnchor(partnerHere);
+                if (aId != bId2) loopConnectorsPlaced++;
+            }
         }
         else if (isHall)
         {
             totalHallwaysPlaced++;
+            // Increment branch run for this branch
+            int b = GetBranchIdForAnchor(anchor);
+            branchHallsSinceBranch.TryGetValue(b, out int run);
+            branchHallsSinceBranch[b] = run + 1;
         }
 
         // Notify replication listeners
         ModulePlaced?.Invoke(prefab, placedModule.position, placedModule.rotation, placedModule);
 
         return true;
+    }
+
+    // Returns true if either side lacks metadata, or if the prefab's RoomMeta.connectionKind
+    // is included in the target DoorAnchor.canConnectTo list. This adds specificity without
+    // breaking prefabs that don't use these components.
+    bool IsConnectionCompatible(GameObject prefab, Transform targetAnchor)
+    {
+        if (!prefab || !targetAnchor) return true;
+
+        var roomMeta = prefab.GetComponent<RoomMeta>();
+        var doorAnchor = targetAnchor.GetComponent<DoorAnchor>();
+
+        if (roomMeta == null || doorAnchor == null) return true; // no restriction if missing
+
+        return doorAnchor.Allows(roomMeta.connectionKind);
     }
 
     GameObject ChooseModuleType(Transform anchor)
@@ -406,8 +449,13 @@ public class SimpleLevelGenerator : MonoBehaviour
             crossBranchPreferred = (aId != bId);
         }
 
-        // If this anchor can connect, only prefer connector for cross-branch pairs
-        if (!inHallwayPhase && !connectorOnCooldown && preferConnectorWhenPartnerDetected && connectorPrefabs != null && connectorPrefabs.Length > 0)
+        // Enforce per-branch minimum halls before allowing connector branching
+        int branchIdHere = GetBranchIdForAnchor(anchor);
+        branchHallsSinceBranch.TryGetValue(branchIdHere, out int hallsSinceBranch);
+        bool branchAllowed = hallsSinceBranch >= minHallsBeforeBranch;
+
+        // If this anchor can connect, only prefer connector for cross-branch pairs and when branch is allowed
+        if (branchAllowed && !inHallwayPhase && !connectorOnCooldown && preferConnectorWhenPartnerDetected && connectorPrefabs != null && connectorPrefabs.Length > 0)
         {
             if (partner != null && (crossBranchPreferred || !prioritizeAnchorsThatCanConnect))
             {
@@ -420,12 +468,24 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
             GameObject conn = PickBestPrefab(connectorPrefabs, anchor, false);
-            GameObject room = PickBestPrefab(roomPrefabs, anchor, false);
+            bool favorSmallMediumRooms = partner == null; // end-cap candidate far from start
+            bool gateMediumRooms = loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms;
+            GameObject room = PickBestRoomPrefab(anchor, favorSmallMediumRooms, gateMediumRooms);
 
             float roll = (float)rng.NextDouble();
-            if (roll < 0.6f && hall != null) return hall;
-            else if (roll < 0.9f && conn != null) return conn;
-            else if (room != null) return room;
+            if (favorSmallMediumRooms)
+            {
+                // Bias rooms to cap ends: Room 50%, Hall 35%, Conn 15%
+                if (roll < 0.5f && room != null) return room;
+                else if (roll < 0.85f && hall != null) return hall;
+                else if (conn != null) return conn;
+            }
+            else
+            {
+                if (roll < 0.5f && hall != null) return hall;
+                else if (roll < 0.8f && conn != null) return conn;
+                else if (room != null) return room;
+            }
         }
         else
         {
@@ -439,7 +499,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
             if (hall != null) return hall;
-            GameObject room = PickBestPrefab(roomPrefabs, anchor, false);
+            GameObject room = PickBestRoomPrefab(anchor, false, loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms);
             if (room != null) return room;
         }
 
@@ -853,6 +913,47 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
         prefabToAnchorCount[prefab] = count;
         return count;
+    }
+
+    // Prefer small/medium rooms when asked, using RoomMeta subtype
+    GameObject PickBestRoomPrefab(Transform atAnchor, bool favorSmallMedium, bool gateMedium)
+    {
+        if (roomPrefabs == null || roomPrefabs.Length == 0) return null;
+        // Simple two-pass: try small/medium first if favored
+        if (favorSmallMedium)
+        {
+            var pick = PickFirstRoomBySubtype(atAnchor, new PlacementCatalog.HallSubtype?[] {
+                PlacementCatalog.HallSubtype.SmallRoom,
+                gateMedium ? (PlacementCatalog.HallSubtype?)null : PlacementCatalog.HallSubtype.MediumRoom
+            });
+            if (pick != null) return pick;
+        }
+        // Fallback any room
+        return PickFirstRoomBySubtype(atAnchor, (PlacementCatalog.HallSubtype?[])null);
+    }
+
+    GameObject PickFirstRoomBySubtype(Transform atAnchor, PlacementCatalog.HallSubtype?[] preferred)
+    {
+        GameObject best = null;
+        for (int i = 0; i < roomPrefabs.Length; i++)
+        {
+            var p = roomPrefabs[i];
+            if (!p) continue;
+            var meta = p.GetComponent<RoomMeta>();
+            if (preferred != null && meta != null)
+            {
+                bool ok = false;
+                for (int k = 0; k < preferred.Length; k++)
+                {
+                    var want = preferred[k];
+                    if (want.HasValue && meta.subtype == want.Value) { ok = true; break; }
+                }
+                if (!ok) continue;
+            }
+            // Optionally add hotspot bias later; for now just return first match
+            best = p; break;
+        }
+        return best;
     }
 
     bool AreDifferentModules(Transform a, Transform b)
