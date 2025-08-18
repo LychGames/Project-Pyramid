@@ -25,6 +25,8 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] GameObject[] hallwayPrefabs;     // NewHall, HallLeft15, HallRight15, HallLeft30, HallRight30
     [SerializeField] GameObject[] connectorPrefabs;   // TripleConnector
     [SerializeField] GameObject[] roomPrefabs;        // Square rooms, triangle floors
+    [Header("Themes")]
+    [SerializeField] ThemeProfile activeTheme;
     [SerializeField] PlacementCatalog catalog;         // Optional: use catalog weights
 
     [Header("Lattice Settings")]
@@ -77,9 +79,25 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] GameObject roomDoorCapPrefab;
     [Tooltip("Small forward inset to avoid Z-fighting with wall")] 
     [SerializeField] float doorCapInset = 0.02f;
+    [Tooltip("Run extra capping passes until no visible open ends remain")] 
+    [SerializeField] bool ensureAllAnchorsClosed = true;
+    [SerializeField] int capMaxPasses = 3;
+    [Tooltip("Eases pairing when deciding if an anchor is already connected")] 
+    [SerializeField] float capPairDistanceExtra = 2.0f;
+    [SerializeField, Range(-1f,1f)] float capPairFacingMinDot = -0.2f;
     [Header("Medium Room Targeting")]
     [SerializeField] int targetMediumRooms = 1;
     [SerializeField] int mediumAnchorTryLimit = 25;
+    [Tooltip("Pre-place a medium room at a lattice-aligned position before growth")] 
+    [SerializeField] bool preplaceMediumRoom = true;
+    [Tooltip("Distance in cells from start (origin) to pre-place the medium room")] 
+    [SerializeField] int mediumDistanceCells = 6;
+    [Tooltip("Yaw index 0..5 for multiples of 60 degrees (0=+Z, 1=60°, 2=120°,...)")]
+    [SerializeField] int mediumYawIndex = 0;
+    [Tooltip("How many initial branches to grow from the medium room immediately after placement")] 
+    [SerializeField] int initialBranchesFromMedium = 3;
+    [Tooltip("How many steps to grow from each chosen medium-room anchor before free growth")] 
+    [SerializeField] int initialStepsPerMediumBranch = 2;
 
     [Header("Placement Policy")]
     [SerializeField] bool disallowConsecutiveConnectors = true;
@@ -101,6 +119,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     private int totalConnectorsPlaced = 0;
     private int totalHallwaysPlaced = 0;
     private int placedMediumRooms = 0;
+    private readonly HashSet<Transform> connectedAnchors = new HashSet<Transform>();
     // Branch tracking: encourage cross-branch connections
     private readonly Dictionary<Transform, int> anchorToBranchId = new Dictionary<Transform, int>();
     // Recent hotspots where a connection was possible/attempted
@@ -161,6 +180,7 @@ public class SimpleLevelGenerator : MonoBehaviour
             branchHallsSinceBranch.Clear();
             loopConnectorsPlaced = 0;
             placedMediumRooms = 0;
+            connectedAnchors.Clear();
 
             ClearLevel();
 
@@ -188,6 +208,18 @@ public class SimpleLevelGenerator : MonoBehaviour
                 var startAnchors = new List<Transform>(availableAnchors);
                 GrowFromInitialAnchors(startAnchors, Mathf.Max(1, initialStepsPerStart));
             }
+
+            // Pre-place a medium room on the lattice and fan out from multiple doors
+            Transform mediumRootPlaced = null;
+            if (preplaceMediumRoom)
+            {
+                mediumRootPlaced = TryPreplaceMediumRoom();
+                if (mediumRootPlaced)
+                {
+                    GrowFromRootAnchors(mediumRootPlaced, Mathf.Max(1, initialBranchesFromMedium), Mathf.Max(1, initialStepsPerMediumBranch));
+                }
+            }
+
             GenerateFromAnchors();
 
             // Optionally ensure medium room placement before sealing
@@ -197,6 +229,10 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (sealOpenAnchorsAtEnd && doorCapPrefab != null)
             {
                 SealOpenAnchors();
+                if (ensureAllAnchorsClosed)
+                {
+                    EnsureAllAnchorsClosed();
+                }
             }
 
             
@@ -402,6 +438,10 @@ public class SimpleLevelGenerator : MonoBehaviour
             availableAnchors.Remove(placedEntryAnchor);
         }
 
+        // Mark anchors as connected
+        connectedAnchors.Add(anchor);
+        if (placedEntryAnchor) connectedAnchors.Add(placedEntryAnchor);
+
         if (logGeneration)
         {
             Debug.Log($"[Gen] Placed {prefab.name} at {placedModule.position}");
@@ -515,9 +555,8 @@ public class SimpleLevelGenerator : MonoBehaviour
         // If we're far from start, allow more variety (score-based with hotspot bias)
         if (distanceFromStart > maxBranchLength)
         {
-            GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
-            GameObject conn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart) ??
-                              PickBestPrefab(connectorPrefabs, anchor, false);
+            GameObject hall = PickBestHall(anchor);
+            GameObject conn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart) ?? PickBestConnector(anchor);
             bool favorSmallMediumRooms = partner == null; // end-cap candidate far from start
             bool gateMediumRooms = loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms;
             GameObject room = PickBestRoomPrefab(anchor, favorSmallMediumRooms, gateMediumRooms);
@@ -547,7 +586,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Fallback with policy: if connectors are on cooldown or hallway phase enforced, use hallways/rooms
         if (inHallwayPhase || connectorOnCooldown)
         {
-            GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
+            GameObject hall = PickBestHall(anchor);
             if (hall != null) return hall;
             GameObject room = PickBestRoomPrefab(anchor, false, loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms);
             if (room != null) return room;
@@ -959,6 +998,70 @@ public class SimpleLevelGenerator : MonoBehaviour
         return best;
     }
 
+    // Grow from a specific root's anchors: choose N anchors and grow M steps from each
+    void GrowFromRootAnchors(Transform root, int branches, int steps)
+    {
+        if (!root) return;
+        var rootAnchors = new List<Transform>();
+        CollectAnchorsIntoList(root, rootAnchors);
+        int grown = 0;
+        for (int i = 0; i < rootAnchors.Count && grown < branches; i++)
+        {
+            Transform a = rootAnchors[i];
+            if (!a) continue;
+            if (!availableAnchors.Contains(a)) continue;
+            // simple forward grow loop
+            Transform current = a;
+            for (int s = 0; s < steps; s++)
+            {
+                if (!availableAnchors.Contains(current)) break;
+                if (!TryPlaceModule(current)) { availableAnchors.Remove(current); break; }
+                Transform lastPlaced = placedModules.Count > 0 ? placedModules[placedModules.Count - 1] : null;
+                current = FindForwardMostAnchor(lastPlaced, current.forward);
+            }
+            grown++;
+        }
+    }
+
+    // Place a medium room at a lattice-aligned position offset from origin
+    Transform TryPreplaceMediumRoom()
+    {
+        // Find a medium room prefab
+        GameObject medium = null;
+        for (int i = 0; i < roomPrefabs.Length; i++)
+        {
+            var p = roomPrefabs[i]; if (!p) continue;
+            var meta = p.GetComponent<RoomMeta>();
+            if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.MediumRoom)
+            { medium = p; break; }
+        }
+        if (medium == null) return null;
+
+        // Compute lattice-aligned target
+        float yaw = Mathf.Repeat(mediumYawIndex, 6) * 60f;
+        Vector3 dir = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        Vector3 pos = SnapToLattice(dir.normalized * (cellSize * Mathf.Max(1, mediumDistanceCells)));
+
+        // Create a temporary target anchor
+        var temp = new GameObject("Medium_TargetAnchor").transform;
+        temp.SetParent(levelRoot, false);
+        temp.position = pos;
+        temp.rotation = Quaternion.Euler(0f, yaw, 0f);
+
+        // Align medium's entry to this target anchor
+        var entry = FindEntryAnchorOnPrefab(medium); if (!entry) { DestroyImmediate(temp.gameObject); return null; }
+        Transform placed = PlaceModule(medium, entry, temp, out Transform placedEntryAnchor);
+        DestroyImmediate(temp.gameObject);
+        if (!placed) return null;
+
+        placedModules.Add(placed);
+        nonStartPlacements++;
+        placementsSinceLastConnector++;
+        CollectAnchorsIntoList(placed, availableAnchors);
+        if (placedEntryAnchor) availableAnchors.Remove(placedEntryAnchor);
+        return placed;
+    }
+
     
 
     // --- Connection / Quality helpers ---
@@ -1001,6 +1104,18 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Facing check: forward vectors should be roughly opposite
         float facingDot = Vector3.Dot(a.forward, -b.forward);
         if (facingDot < connectionFacingDotThreshold) return false;
+        return true;
+    }
+
+    // More permissive version used during capping to decide if an anchor is already paired
+    bool AnchorsCouldConnectForCapping(Transform a, Transform b)
+    {
+        Vector3 aXZ = new Vector3(a.position.x, 0f, a.position.z);
+        Vector3 bXZ = new Vector3(b.position.x, 0f, b.position.z);
+        float dist = Vector3.Distance(aXZ, bXZ);
+        if (dist > (connectionDistance + capPairDistanceExtra)) return false;
+        float facingDot = Vector3.Dot(a.forward, -b.forward);
+        if (facingDot < capPairFacingMinDot) return false;
         return true;
     }
 
@@ -1047,6 +1162,89 @@ public class SimpleLevelGenerator : MonoBehaviour
             }
         }
         return best ?? candidates[0];
+    }
+
+    GameObject PickBestHall(Transform anchor)
+    {
+        var themeHalls = GetThemeHalls();
+        if (themeHalls != null && themeHalls.Count > 0)
+        {
+            // Filter by matching width or adapters available
+            int currentW = GetAnchorWidthForTransform(anchor);
+            var list = FilterByWidth(themeHalls, currentW);
+            // Weight simple straights and triple connectors more; fall back if empty
+            for (int i = 0; i < list.Count; i++)
+            {
+                var rm = list[i];
+                if (rm != null && rm.gameObject != null) return rm.gameObject;
+            }
+        }
+        return PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
+    }
+
+    GameObject PickBestConnector(Transform anchor)
+    {
+        var themeAdapters = GetThemeAdapters();
+        if (themeAdapters != null && themeAdapters.Count > 0)
+        {
+            int currentW = GetAnchorWidthForTransform(anchor);
+            var list = FilterByWidth(themeAdapters, currentW);
+            for (int i = 0; i < list.Count; i++)
+            {
+                var rm = list[i];
+                if (rm != null && rm.gameObject != null) return rm.gameObject;
+            }
+        }
+        return PickBestPrefab(connectorPrefabs, anchor, false);
+    }
+
+    int GetAnchorWidthForTransform(Transform anchor)
+    {
+        // If the owner module has meta width use it, else fall back to 10
+        Transform owner = GetModuleRootForAnchor(anchor);
+        RoomMeta meta = owner != null ? owner.GetComponent<RoomMeta>() : null;
+        return (meta != null) ? meta.hallWidth : 10;
+    }
+
+    List<RoomMeta> FilterByWidth(List<RoomMeta> list, int currentW)
+    {
+        var result = new List<RoomMeta>(list.Count);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var r = list[i]; if (r == null) continue;
+            if (r.hallWidth == currentW || HasAdapter(currentW, r.hallWidth)) result.Add(r);
+        }
+        return result;
+    }
+
+    bool HasAdapter(int fromW, int toW)
+    {
+        var adapters = GetThemeAdapters();
+        if (adapters == null) return false;
+        for (int i = 0; i < adapters.Count; i++)
+        {
+            var a = adapters[i]; if (a == null) continue;
+            if (!a.isAdapter) continue;
+            // Minimal: allow any adapter when widths differ (you can refine with explicit from/to later)
+            if (fromW != toW) return true;
+        }
+        return false;
+    }
+
+    List<RoomMeta> GetThemeHalls()
+    {
+        if (activeTheme == null) return null;
+        var fi = typeof(ThemeProfile).GetField("halls");
+        if (fi == null) return null;
+        return fi.GetValue(activeTheme) as List<RoomMeta>;
+    }
+
+    List<RoomMeta> GetThemeAdapters()
+    {
+        if (activeTheme == null) return null;
+        var fi = typeof(ThemeProfile).GetField("adapters");
+        if (fi == null) return null;
+        return fi.GetValue(activeTheme) as List<RoomMeta>;
     }
 
     int GetAnchorCountForPrefab(GameObject prefab)
@@ -1153,27 +1351,20 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (prefab == null) prefab = doorCapPrefab;
 
             // Place using anchor alignment so the cap's entry DoorAnchor snaps to the target anchor
-            PlaceCapAtAnchor(prefab, a, owner ? owner : levelRoot);
+            PlaceCapAtAnchor(prefab, a, owner != null ? owner : levelRoot);
         }
     }
 
     bool IsAnchorOpen(Transform a, List<Transform> anchors)
     {
-        for (int j = 0; j < anchors.Count; j++)
-        {
-            var b = anchors[j];
-            if (!b || b == a) continue;
-            if (!AreDifferentModules(a, b)) continue;
-            if (AnchorsCouldConnect(a, b)) return false; // has a partner → not open
-        }
-        return true;
+        return !connectedAnchors.Contains(a);
     }
 
     void PlaceCapAtAnchor(GameObject capPrefab, Transform targetAnchor, Transform parent)
     {
         if (!capPrefab || !targetAnchor) return;
         var inst = Instantiate(capPrefab, Vector3.zero, Quaternion.identity, parent);
-        var entry = FindEntryAnchorOnPrefab(inst);
+        var entry = GetBestCapEntryAnchor(inst.transform, targetAnchor);
         if (!entry) entry = inst.transform;
         AlignModuleYawOnly(inst.transform, entry, targetAnchor, snapYawTo30);
         // small inset to avoid z-fighting
@@ -1185,6 +1376,51 @@ public class SimpleLevelGenerator : MonoBehaviour
             Vector3 desired = targetAnchor.position + targetAnchor.forward * doorCapInset;
             Vector3 delta = pivot.position - inst.transform.position;
             inst.transform.position = desired - delta;
+        }
+        connectedAnchors.Add(targetAnchor);
+    }
+
+    Transform GetBestCapEntryAnchor(Transform capRoot, Transform targetAnchor)
+    {
+        if (!capRoot) return null;
+        Transform best = null; float bestDot = float.NegativeInfinity;
+        var queue = new Queue<Transform>();
+        queue.Enqueue(capRoot);
+        while (queue.Count > 0)
+        {
+            var t = queue.Dequeue();
+            if (t != capRoot && t.name.IndexOf("Anchor", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                float d = Vector3.Dot(t.forward, -targetAnchor.forward);
+                if (d > bestDot) { bestDot = d; best = t; }
+            }
+            for (int i = 0; i < t.childCount; i++) queue.Enqueue(t.GetChild(i));
+        }
+        return best;
+    }
+
+    void EnsureAllAnchorsClosed()
+    {
+        for (int pass = 0; pass < Mathf.Max(1, capMaxPasses); pass++)
+        {
+            var anchors = GatherAllAnchorsInLevel();
+            bool placedAny = false;
+            for (int i = 0; i < anchors.Count; i++)
+            {
+                var a = anchors[i]; if (!a) continue;
+                Transform owner = GetModuleRootForAnchor(a);
+                if (owner != null && owner.name.StartsWith("DoorCap_")) continue;
+                if (!IsAnchorOpen(a, anchors)) continue;
+
+                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
+                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
+                                    : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
+                if (prefab == null) continue;
+                PlaceCapAtAnchor(prefab, a, owner != null ? owner : levelRoot);
+                placedAny = true;
+            }
+            if (!placedAny) break;
         }
     }
 }

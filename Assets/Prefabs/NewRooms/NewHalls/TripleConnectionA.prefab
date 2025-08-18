@@ -1287,9 +1287,13 @@ MonoBehaviour:
   category: 1
   weight: 1
   connectionKind: 5
-  subtype: 0
+  hallWidth: 5
+  sizeClass: 0
+  themeTags: []
+  isAdapter: 1
+  subtype: 7
   anchorCount: 3
-  catalogWeight: 15
-  depthGate: 1
+  catalogWeight: 25
+  depthGate: 0
   maxPerMap: 999
   isLandmark: 0

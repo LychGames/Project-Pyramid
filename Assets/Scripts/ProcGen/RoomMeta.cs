@@ -28,6 +28,15 @@ public class RoomMeta : MonoBehaviour
     [Tooltip("Granular type used by DoorAnchor.canConnectTo to filter compatible targets.")]
     public ConnectionKind connectionKind = ConnectionKind.StraightHall;
 
+    // Theme system metadata
+    public enum SizeClass { Hall, Small, Medium, Large, Mega }
+    [Tooltip("Clear doorway width this piece expects (e.g., 10/14/20)")]
+    public int hallWidth = 10;
+    public SizeClass sizeClass = SizeClass.Hall;
+    public string[] themeTags;
+    [Tooltip("Mark true for width reducers/expanders/adapters")]
+    public bool isAdapter = false;
+
     [Header("Placement Catalog Metadata (edit here on the prefab)")]
     [Tooltip("Subtype used by the generator/catalog for selection.")]
     public PlacementCatalog.HallSubtype subtype = PlacementCatalog.HallSubtype.Straight;

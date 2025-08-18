@@ -321,6 +321,10 @@ MonoBehaviour:
   category: 1
   weight: 1
   connectionKind: 4
+  hallWidth: 5
+  sizeClass: 0
+  themeTags: []
+  isAdapter: 1
   subtype: 8
   anchorCount: 3
   catalogWeight: 15

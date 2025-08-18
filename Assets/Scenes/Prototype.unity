@@ -284,7 +284,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   seed: 0
   randomizeSeed: 1
-  maxModules: 100
+  maxModules: 140
   levelRoot: {fileID: 2114845929}
   startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
   startIsVirtual: 0
@@ -307,6 +307,7 @@ MonoBehaviour:
   roomPrefabs:
   - {fileID: 202433006534595424, guid: eebacb422ed9a0b49937f5ad57db404d, type: 3}
   - {fileID: 645644820273830860, guid: 6932fe9359844d34d8bc28245e96b1b6, type: 3}
+  activeTheme: {fileID: 11400000, guid: ef61e3b242f8b5b409b0c9b57b245ce0, type: 2}
   catalog: {fileID: 0}
   cellSize: 2.5
   snapToLattice: 1
@@ -327,7 +328,7 @@ MonoBehaviour:
   minPotentialConnectionsAccept: 1
   connectionDistance: 6
   connectionFacingDotThreshold: 0
-  reserveModulesForCaps: 20
+  reserveModulesForCaps: 0
   prioritizeAnchorsThatCanConnect: 1
   preferConnectorWhenPartnerDetected: 1
   limitStartAnchorsToOne: 0
@@ -338,8 +339,17 @@ MonoBehaviour:
   hallwayDoorCapPrefab: {fileID: 1910117104408121033, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
   roomDoorCapPrefab: {fileID: 1831734268593136311, guid: 9936eaac02611974a8e3a916df62ee06, type: 3}
   doorCapInset: 0.0009
+  ensureAllAnchorsClosed: 1
+  capMaxPasses: 3
+  capPairDistanceExtra: 2
+  capPairFacingMinDot: -0.2
   targetMediumRooms: 1
   mediumAnchorTryLimit: 25
+  preplaceMediumRoom: 1
+  mediumDistanceCells: 6
+  mediumYawIndex: 0
+  initialBranchesFromMedium: 3
+  initialStepsPerMediumBranch: 2
   disallowConsecutiveConnectors: 1
   minPlacementsBetweenConnectors: 1
   forceHallwayFirstSteps: 3

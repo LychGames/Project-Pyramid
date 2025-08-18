@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 81e47e4008f921744af6136261b1deba, type: 3}
+  m_Name: LibraryTheme
+  m_EditorClassIdentifier: 
+  halls:
+  - {fileID: -4345611866724684114, guid: c41cbc09a06daa84b91b426be1f41392, type: 3}
+  - {fileID: 5263620601971777808, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
+  - {fileID: 615521175968659421, guid: 224aecb087cb6d945802809a28eb0bc8, type: 3}
+  - {fileID: 5490106270566929674, guid: 911264d8608a18045a4de1c80761d0c4, type: 3}
+  - {fileID: 4748676012516669445, guid: 8851c90fd3392084a93a5ee3254df706, type: 3}
+  - {fileID: 742275331499673178, guid: 26665d39f3ff6194187253035c807c37, type: 3}
+  smallRooms:
+  - {fileID: 4739164004664804018, guid: d3de60ff19d60074bb788968d9d86463, type: 3}
+  - {fileID: 4534394053046089715, guid: eebacb422ed9a0b49937f5ad57db404d, type: 3}
+  - {fileID: -5864675022887284159, guid: e7e81bf89661cbd44ab2b593be04dd6e, type: 3}
+  mediumRooms:
+  - {fileID: 2523081116140937810, guid: 6932fe9359844d34d8bc28245e96b1b6, type: 3}
+  largeRooms: []
+  adapters:
+  - {fileID: -2002389339776855641, guid: f5d6bcf9a94d4aa4fbaa090227d6c245, type: 3}
+  - {fileID: -2088041779846130801, guid: 2decb1ec50ec6ab45bbdb0c73a120b84, type: 3}
+  - {fileID: 8774623847890369426, guid: e7642d904c4ebb74484c8e92af1e7056, type: 3}
+  - {fileID: 1396572042191648669, guid: 99faca630cc8c054fbea7d18064415a9, type: 3}
+  - {fileID: 4333914264682153173, guid: 633ac0d21648b1c48a72b2da294d0c05, type: 3}
+  - {fileID: -3776233076213061437, guid: 835d879909c4baa46b339c7d58321c2a, type: 3}
+  - {fileID: 1168349235313824727, guid: c9928e0dc5b97d947ad848ddc97fc080, type: 3}
+  - {fileID: 6705690795587726765, guid: 3c5c37601ea97b54097627d93af3edab, type: 3}
+  - {fileID: -1077344598606054245, guid: ded4befe881a70a44832b18ab6302417, type: 3}
+  spineLength: 20
+  maxBranch: 3
+  roomDensity: 0.35
+  loopBias: 0.25
+  preferredWidths: 0a000000
+  allowVertical: 0
