@@ -828,7 +828,7 @@ MonoBehaviour:
   connectionKind: 5
   subtype: 8
   anchorCount: 3
-  catalogWeight: 20
+  catalogWeight: 25
   depthGate: 1
   maxPerMap: 999
   isLandmark: 0

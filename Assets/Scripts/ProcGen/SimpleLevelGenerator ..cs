@@ -62,6 +62,12 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Header("Finishing")]
     [SerializeField] GameObject doorCapPrefab;
     [SerializeField] bool sealOpenAnchorsAtEnd = false;
+    [Tooltip("Optional cap just for hallways; overrides generic cap when set")] 
+    [SerializeField] GameObject hallwayDoorCapPrefab;
+    [Tooltip("Optional cap sized for room doorways (e.g., 2.0m wide x 3.5m high)")] 
+    [SerializeField] GameObject roomDoorCapPrefab;
+    [Tooltip("Small forward inset to avoid Z-fighting with wall")] 
+    [SerializeField] float doorCapInset = 0.02f;
 
     [Header("Placement Policy")]
     [SerializeField] bool disallowConsecutiveConnectors = true;
@@ -998,8 +1004,34 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             var a = availableAnchors[i];
             if (!a) continue;
-            var cap = Instantiate(doorCapPrefab, a.position, a.rotation, levelRoot);
-            cap.name = $"DoorCap_{i}";
+            // Determine owning module and its category
+            Transform owner = GetModuleRootForAnchor(a);
+            RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+            bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
+
+            // Choose best prefab in priority: room-specific -> hallway-specific -> generic
+            GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
+                                : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
+            if (prefab == null) prefab = doorCapPrefab;
+
+            // Compute a centered target point for the cap:
+            // Prefer a BoxCollider on the anchor (door trigger) to get the true center
+            var box = a.GetComponent<BoxCollider>();
+            Vector3 anchorCenter = box ? a.TransformPoint(box.center) : a.position;
+            Vector3 pos = anchorCenter + a.forward * doorCapInset;
+            Quaternion rot = a.rotation;
+            Transform parent = owner ? owner : levelRoot;
+            var cap = Instantiate(prefab, pos, rot, parent);
+            cap.name = $"DoorCap_{(isRoom ? "Room" : "Hall")}_{i}";
+
+            // If the cap prefab has a child named 'CapPivot', align that pivot exactly to our target point
+            var pivot = cap.transform.Find("CapPivot");
+            if (pivot != null)
+            {
+                Vector3 delta = pivot.position - cap.transform.position;
+                // Move parent so that CapPivot lands on the desired position
+                cap.transform.position = pos - delta;
+            }
         }
     }
 }
