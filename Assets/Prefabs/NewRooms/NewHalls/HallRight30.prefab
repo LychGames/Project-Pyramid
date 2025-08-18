@@ -431,7 +431,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   category: 1
   weight: 8
-  connectionKind: 1
+  connectionKind: 3
   subtype: 4
   anchorCount: 2
   catalogWeight: 3
@@ -626,7 +626,7 @@ Transform:
   m_GameObject: {fileID: 7831922875563405993}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: 4.636, y: 1.75, z: -2.855}
+  m_LocalPosition: {x: 5, y: 1.75, z: -2.855}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -694,7 +694,7 @@ Transform:
   m_GameObject: {fileID: 8480338677672554947}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: -0.7071068, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: -4.655, y: 1.75, z: 2.856}
+  m_LocalPosition: {x: -5, y: 1.75, z: 2.856}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:

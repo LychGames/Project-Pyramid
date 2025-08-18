@@ -37,10 +37,14 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] float minModuleDistance = 8f;    // Minimum distance between module centers (prevents overlaps)
     [SerializeField] float maxBranchLength = 8f;      // Maximum length before allowing branching
     [SerializeField] int maxSnakeLength = 6;          // (kept for future use)
+    [Header("Anchor Join Tuning")]
+    [Tooltip("Nudges newly placed modules along the target anchor forward. Positive = push in, Negative = pull back")]
+    [SerializeField] float anchorJoinOffset = 0f;
 
     [Header("Debug")]
     [SerializeField] bool showDebugInfo = false;
     [SerializeField] bool logGeneration = false;
+    [SerializeField] bool drawGizmosInPlay = false;
 
     [Header("Quick Actions")]
     [SerializeField] bool generateButton = false;
@@ -53,11 +57,16 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] int minPotentialConnectionsAccept = 1;
     [SerializeField] float connectionDistance = 12f; // anchors closer than this are considered connectable
     [SerializeField, Range(-1f, 1f)] float connectionFacingDotThreshold = -0.6f; // facing roughly towards each other
+    [Tooltip("Reserve this many module slots so capping always runs with budget left.")]
+    [SerializeField] int reserveModulesForCaps = 10;
 
     [Header("Loop/Branch Strategies")]
     [SerializeField] bool prioritizeAnchorsThatCanConnect = true;
     [SerializeField] bool preferConnectorWhenPartnerDetected = true;
     [SerializeField] bool limitStartAnchorsToOne = false;
+    [Tooltip("Grow a few steps from each start anchor before free growth")] 
+    [SerializeField] bool forceInitialGrowthFromAllStartAnchors = true;
+    [SerializeField] int initialStepsPerStart = 2;
 
     [Header("Finishing")]
     [SerializeField] GameObject doorCapPrefab;
@@ -68,6 +77,9 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] GameObject roomDoorCapPrefab;
     [Tooltip("Small forward inset to avoid Z-fighting with wall")] 
     [SerializeField] float doorCapInset = 0.02f;
+    [Header("Medium Room Targeting")]
+    [SerializeField] int targetMediumRooms = 1;
+    [SerializeField] int mediumAnchorTryLimit = 25;
 
     [Header("Placement Policy")]
     [SerializeField] bool disallowConsecutiveConnectors = true;
@@ -88,6 +100,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     private int nonStartPlacements = 0; // excludes the initial start module
     private int totalConnectorsPlaced = 0;
     private int totalHallwaysPlaced = 0;
+    private int placedMediumRooms = 0;
     // Branch tracking: encourage cross-branch connections
     private readonly Dictionary<Transform, int> anchorToBranchId = new Dictionary<Transform, int>();
     // Recent hotspots where a connection was possible/attempted
@@ -147,6 +160,7 @@ public class SimpleLevelGenerator : MonoBehaviour
             prefabToAnchorCount.Clear();
             branchHallsSinceBranch.Clear();
             loopConnectorsPlaced = 0;
+            placedMediumRooms = 0;
 
             ClearLevel();
 
@@ -169,9 +183,17 @@ public class SimpleLevelGenerator : MonoBehaviour
             }
 
             // Generate the level
+            if (forceInitialGrowthFromAllStartAnchors)
+            {
+                var startAnchors = new List<Transform>(availableAnchors);
+                GrowFromInitialAnchors(startAnchors, Mathf.Max(1, initialStepsPerStart));
+            }
             GenerateFromAnchors();
 
-            // Optionally seal remaining open anchors
+            // Optionally ensure medium room placement before sealing
+            EnsureMediumRooms();
+
+            // Force-run capping regardless of module limit; this closes any visible openings
             if (sealOpenAnchorsAtEnd && doorCapPrefab != null)
             {
                 SealOpenAnchors();
@@ -306,8 +328,9 @@ public class SimpleLevelGenerator : MonoBehaviour
     {
         int attempts = 0;
         int maxAttempts = maxModules * 3; // Prevent infinite loops
+        int moduleLimit = Mathf.Max(0, maxModules - Mathf.Max(0, reserveModulesForCaps));
 
-        while (availableAnchors.Count > 0 && placedModules.Count < maxModules && attempts < maxAttempts)
+        while (availableAnchors.Count > 0 && placedModules.Count < moduleLimit && attempts < maxAttempts)
         {
             attempts++;
 
@@ -420,6 +443,15 @@ public class SimpleLevelGenerator : MonoBehaviour
             int b = GetBranchIdForAnchor(anchor);
             branchHallsSinceBranch.TryGetValue(b, out int run);
             branchHallsSinceBranch[b] = run + 1;
+        }
+        else
+        {
+            // Check if placed module is a medium room
+            var meta = placedModule ? placedModule.GetComponent<RoomMeta>() : null;
+            if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.MediumRoom)
+            {
+                placedMediumRooms++;
+            }
         }
 
         // Notify replication listeners
@@ -619,6 +651,12 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Align the entry anchor to the target anchor (yaw-only to prevent roll/pitch)
         AlignModuleYawOnly(instanceTransform, entryAnchorOnInstance, targetAnchor, snapYawTo30);
 
+        // Optional anchor join offset
+        if (Mathf.Abs(anchorJoinOffset) > 0f)
+        {
+            instanceTransform.position += targetAnchor.forward * anchorJoinOffset;
+        }
+
         // Snap to lattice only if explicitly allowed for attached modules, then re-translate to keep anchors touching
         if (snapToLattice && snapAttachedToLattice)
         {
@@ -723,6 +761,60 @@ public class SimpleLevelGenerator : MonoBehaviour
         moduleRoot.position += offset;
     }
 
+    // Ensure at least targetMediumRooms have been placed by attempting direct placement(s)
+    void EnsureMediumRooms()
+    {
+        if (placedMediumRooms >= targetMediumRooms) return;
+        if (roomPrefabs == null || roomPrefabs.Length == 0) return;
+        // Collect and sort anchors by distance from origin (farthest first)
+        var anchors = GatherAllAnchorsInLevel();
+        anchors.Sort((a, b) =>
+        {
+            float da = a ? (a.position - Vector3.zero).sqrMagnitude : -1f;
+            float db = b ? (b.position - Vector3.zero).sqrMagnitude : -1f;
+            return db.CompareTo(da);
+        });
+
+        // Collect medium room prefabs
+        var mediumPrefabs = new List<GameObject>();
+        for (int i = 0; i < roomPrefabs.Length; i++)
+        {
+            var p = roomPrefabs[i]; if (!p) continue;
+            var meta = p.GetComponent<RoomMeta>();
+            if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.MediumRoom)
+                mediumPrefabs.Add(p);
+        }
+        if (mediumPrefabs.Count == 0) return;
+
+        int tries = 0;
+        for (int i = 0; i < anchors.Count && tries < mediumAnchorTryLimit && placedMediumRooms < targetMediumRooms; i++)
+        {
+            var anchor = anchors[i]; if (!anchor) continue;
+            // Skip anchors that already have a partner (not open)
+            if (!IsAnchorOpen(anchor, anchors)) continue;
+
+            for (int m = 0; m < mediumPrefabs.Count && placedMediumRooms < targetMediumRooms; m++)
+            {
+                var medium = mediumPrefabs[m]; if (!medium) continue;
+                if (!IsConnectionCompatible(medium, anchor)) { tries++; continue; }
+                var entry = FindEntryAnchorOnPrefab(medium); if (!entry) { tries++; continue; }
+                Transform placed = PlaceModule(medium, entry, anchor, out Transform placedEntryAnchor);
+                tries++;
+                if (!placed) continue;
+
+                placedModules.Add(placed);
+                nonStartPlacements++;
+                placementsSinceLastConnector++;
+                CollectAnchorsIntoList(placed, availableAnchors);
+                if (placedEntryAnchor) availableAnchors.Remove(placedEntryAnchor);
+                availableAnchors.Remove(anchor);
+                placedMediumRooms++;
+                ModulePlaced?.Invoke(medium, placed.position, placed.rotation, placed);
+                break;
+            }
+        }
+    }
+
     void RotateAroundPivot(Transform t, Vector3 pivot, Quaternion delta)
     {
         Vector3 dir = t.position - pivot;
@@ -785,6 +877,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     void OnDrawGizmos()
     {
         if (!showDebugInfo) return;
+        if (Application.isPlaying && !drawGizmosInPlay) return;
 
         // Draw lattice grid
         Gizmos.color = Color.yellow;
@@ -830,6 +923,40 @@ public class SimpleLevelGenerator : MonoBehaviour
                 }
             }
         }
+    }
+
+    // Grow forward from each start anchor by N steps to fan out equally
+    void GrowFromInitialAnchors(List<Transform> starts, int stepsPerStart)
+    {
+        if (starts == null) return;
+        for (int i = 0; i < starts.Count; i++)
+        {
+            Transform current = starts[i];
+            for (int s = 0; s < stepsPerStart; s++)
+            {
+                if (current == null) break;
+                if (!availableAnchors.Contains(current)) break;
+                if (!TryPlaceModule(current)) { availableAnchors.Remove(current); break; }
+                // pick the next anchor that continues forward
+                Transform lastPlaced = placedModules.Count > 0 ? placedModules[placedModules.Count - 1] : null;
+                current = FindForwardMostAnchor(lastPlaced, current.forward);
+            }
+        }
+    }
+
+    Transform FindForwardMostAnchor(Transform moduleRoot, Vector3 fromDir)
+    {
+        if (!moduleRoot) return null;
+        var list = new List<Transform>();
+        CollectAnchorsIntoList(moduleRoot, list);
+        Transform best = null; float bestDot = -1f;
+        for (int i = 0; i < list.Count; i++)
+        {
+            var t = list[i]; if (!t) continue;
+            float d = Vector3.Dot(fromDir.normalized, t.forward);
+            if (d > bestDot) { bestDot = d; best = t; }
+        }
+        return best;
     }
 
     
@@ -963,6 +1090,14 @@ public class SimpleLevelGenerator : MonoBehaviour
             });
             if (pick != null) return pick;
         }
+        // If we still need a medium room, try to pick one occasionally
+        if (placedMediumRooms < targetMediumRooms)
+        {
+            var tryMedium = PickFirstRoomBySubtype(atAnchor, new PlacementCatalog.HallSubtype?[] {
+                PlacementCatalog.HallSubtype.MediumRoom
+            });
+            if (tryMedium != null) return tryMedium;
+        }
         // Fallback any room
         return PickFirstRoomBySubtype(atAnchor, (PlacementCatalog.HallSubtype?[])null);
     }
@@ -999,13 +1134,16 @@ public class SimpleLevelGenerator : MonoBehaviour
     void SealOpenAnchors()
     {
         if (doorCapPrefab == null) return;
-        // Use currently available anchors as open ends
-        for (int i = 0; i < availableAnchors.Count; i++)
+        // Snapshot all anchors at this stage
+        var allAnchors = GatherAllAnchorsInLevel();
+        for (int i = 0; i < allAnchors.Count; i++)
         {
-            var a = availableAnchors[i];
+            var a = allAnchors[i];
             if (!a) continue;
-            // Determine owning module and its category
             Transform owner = GetModuleRootForAnchor(a);
+            if (owner != null && owner.name.StartsWith("DoorCap_")) continue; // skip caps
+            if (!IsAnchorOpen(a, allAnchors)) continue;
+
             RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
             bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
 
@@ -1014,24 +1152,39 @@ public class SimpleLevelGenerator : MonoBehaviour
                                 : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
             if (prefab == null) prefab = doorCapPrefab;
 
-            // Compute a centered target point for the cap:
-            // Prefer a BoxCollider on the anchor (door trigger) to get the true center
-            var box = a.GetComponent<BoxCollider>();
-            Vector3 anchorCenter = box ? a.TransformPoint(box.center) : a.position;
-            Vector3 pos = anchorCenter + a.forward * doorCapInset;
-            Quaternion rot = a.rotation;
-            Transform parent = owner ? owner : levelRoot;
-            var cap = Instantiate(prefab, pos, rot, parent);
-            cap.name = $"DoorCap_{(isRoom ? "Room" : "Hall")}_{i}";
+            // Place using anchor alignment so the cap's entry DoorAnchor snaps to the target anchor
+            PlaceCapAtAnchor(prefab, a, owner ? owner : levelRoot);
+        }
+    }
 
-            // If the cap prefab has a child named 'CapPivot', align that pivot exactly to our target point
-            var pivot = cap.transform.Find("CapPivot");
-            if (pivot != null)
-            {
-                Vector3 delta = pivot.position - cap.transform.position;
-                // Move parent so that CapPivot lands on the desired position
-                cap.transform.position = pos - delta;
-            }
+    bool IsAnchorOpen(Transform a, List<Transform> anchors)
+    {
+        for (int j = 0; j < anchors.Count; j++)
+        {
+            var b = anchors[j];
+            if (!b || b == a) continue;
+            if (!AreDifferentModules(a, b)) continue;
+            if (AnchorsCouldConnect(a, b)) return false; // has a partner → not open
+        }
+        return true;
+    }
+
+    void PlaceCapAtAnchor(GameObject capPrefab, Transform targetAnchor, Transform parent)
+    {
+        if (!capPrefab || !targetAnchor) return;
+        var inst = Instantiate(capPrefab, Vector3.zero, Quaternion.identity, parent);
+        var entry = FindEntryAnchorOnPrefab(inst);
+        if (!entry) entry = inst.transform;
+        AlignModuleYawOnly(inst.transform, entry, targetAnchor, snapYawTo30);
+        // small inset to avoid z-fighting
+        inst.transform.position += targetAnchor.forward * doorCapInset;
+        inst.name = $"DoorCap_{(parent && parent.GetComponent<RoomMeta>() ? "Room" : "Hall")}_{targetAnchor.GetInstanceID()}";
+        var pivot = inst.transform.Find("CapPivot");
+        if (pivot != null)
+        {
+            Vector3 desired = targetAnchor.position + targetAnchor.forward * doorCapInset;
+            Vector3 delta = pivot.position - inst.transform.position;
+            inst.transform.position = desired - delta;
         }
     }
 }

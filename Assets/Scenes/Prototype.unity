@@ -284,7 +284,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   seed: 0
   randomizeSeed: 1
-  maxModules: 90
+  maxModules: 100
   levelRoot: {fileID: 2114845929}
   startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
   startIsVirtual: 0
@@ -315,24 +315,31 @@ MonoBehaviour:
   minModuleDistance: 10
   maxBranchLength: 4
   maxSnakeLength: 6
+  anchorJoinOffset: 0
   showDebugInfo: 0
   logGeneration: 0
+  drawGizmosInPlay: 0
   generateButton: 1
   clearButton: 0
   autoRetryUntilGood: 1
   maxGenerationRetries: 6
   minModulesAccept: 12
   minPotentialConnectionsAccept: 1
-  connectionDistance: 12
-  connectionFacingDotThreshold: -0.6
+  connectionDistance: 6
+  connectionFacingDotThreshold: 0
+  reserveModulesForCaps: 20
   prioritizeAnchorsThatCanConnect: 1
   preferConnectorWhenPartnerDetected: 1
   limitStartAnchorsToOne: 0
-  doorCapPrefab: {fileID: 1874334448926048651, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
+  forceInitialGrowthFromAllStartAnchors: 1
+  initialStepsPerStart: 2
+  doorCapPrefab: {fileID: 1831734268593136311, guid: 9936eaac02611974a8e3a916df62ee06, type: 3}
   sealOpenAnchorsAtEnd: 1
-  hallwayDoorCapPrefab: {fileID: 1874334448926048651, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
+  hallwayDoorCapPrefab: {fileID: 1910117104408121033, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
   roomDoorCapPrefab: {fileID: 1831734268593136311, guid: 9936eaac02611974a8e3a916df62ee06, type: 3}
-  doorCapInset: 0.02
+  doorCapInset: 0.0009
+  targetMediumRooms: 1
+  mediumAnchorTryLimit: 25
   disallowConsecutiveConnectors: 1
   minPlacementsBetweenConnectors: 1
   forceHallwayFirstSteps: 3
