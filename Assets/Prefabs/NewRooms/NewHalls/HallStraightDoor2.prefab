@@ -696,7 +696,7 @@ MonoBehaviour:
   subtype: 0
   anchorCount: 4
   catalogWeight: 1
-  depthGate: 0
+  depthGate: 10
   maxPerMap: 999
   isLandmark: 0
 --- !u!1 &3332982836219833993

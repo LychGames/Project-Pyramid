@@ -135,6 +135,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     private int totalHallwaysPlaced = 0;
     private int placedMediumRooms = 0;
     private readonly HashSet<Transform> connectedAnchors = new HashSet<Transform>();
+    private readonly List<Transform> allLargeRooms = new List<Transform>(); // Track ALL large rooms
     // Branch tracking: encourage cross-branch connections
     private readonly Dictionary<Transform, int> anchorToBranchId = new Dictionary<Transform, int>();
     // Recent hotspots where a connection was possible/attempted
@@ -215,6 +216,33 @@ public class SimpleLevelGenerator : MonoBehaviour
     public void SimpleCapUnconnectedAnchorsManual()
     {
         SimpleCapUnconnectedAnchors();
+    }
+
+    [ContextMenu("Cap Truly Isolated Anchors Only")]
+    public void CapTrulyIsolatedAnchorsOnlyManual()
+    {
+        CapTrulyIsolatedAnchorsOnly();
+    }
+
+    [ContextMenu("Cap Unconnected Anchors After Generation")]
+    public void CapUnconnectedAnchorsAfterGenerationManual()
+    {
+        CapUnconnectedAnchorsAfterGeneration();
+    }
+
+    [ContextMenu("Debug Spacing Settings")]
+    public void DebugSpacingSettings()
+    {
+        Debug.Log("=== CURRENT SPACING SETTINGS ===");
+        Debug.Log($"startFromLargeRoom: {startFromLargeRoom}");
+        Debug.Log($"minPlacementsBetweenConnectors: {minPlacementsBetweenConnectors}");
+        Debug.Log($"forceHallwayFirstSteps: {forceHallwayFirstSteps}");
+        Debug.Log($"minHallsBeforeBranch: {minHallsBeforeBranch}");
+        Debug.Log($"disallowConsecutiveConnectors: {disallowConsecutiveConnectors}");
+        Debug.Log($"connectionDistance: {connectionDistance}");
+        Debug.Log($"placementsSinceLastConnector: {placementsSinceLastConnector}");
+        Debug.Log($"totalConnectorsPlaced: {totalConnectorsPlaced}");
+        Debug.Log($"=== END SPACING SETTINGS ===");
     }
 
     [ContextMenu("Nuclear Option - Cap EVERYTHING")]
@@ -400,8 +428,8 @@ public class SimpleLevelGenerator : MonoBehaviour
                 Transform owner = GetModuleRootForAnchor(t);
                 if (owner != null && owner.name.StartsWith("DoorCap_")) continue;
                 
-                // PROTECTION: Skip large room anchors to prevent blocking doorways
-                if (owner == lastLargeRoot)
+                // PROTECTION: Skip ALL large room anchors to prevent blocking doorways
+                if (allLargeRooms.Contains(owner))
                 {
                     Debug.Log($"[Gen] FINAL pass skipping large room anchor {t.name} - protecting large room exits");
                     continue;
@@ -562,8 +590,8 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (owner == null) owner = anchor.parent; // Fallback to parent
             if (owner == null) owner = levelRoot; // Ultimate fallback
             
-            // PROTECTION: Skip large room anchors to prevent blocking doorways
-            if (owner == lastLargeRoot)
+            // PROTECTION: Skip ALL large room anchors to prevent blocking doorways
+            if (allLargeRooms.Contains(owner))
             {
                 Debug.Log($"[Gen] ULTRA pass skipping large room anchor {anchor.name} - protecting large room exits");
                 continue;
@@ -692,6 +720,7 @@ public class SimpleLevelGenerator : MonoBehaviour
             loopConnectorsPlaced = 0;
             placedMediumRooms = 0;
             connectedAnchors.Clear();
+            allLargeRooms.Clear(); // Clear large room tracking
 
             ClearLevel();
 
@@ -731,6 +760,7 @@ public class SimpleLevelGenerator : MonoBehaviour
                 if (large)
                 {
                     lastLargeRoot = large;
+                    allLargeRooms.Add(large); // Track this large room
                     // Ensure at least 3 branches from large room (minimum 2 exits, preferably 3)
                     int minBranches = startFromLargeRoom ? Mathf.Max(2, initialBranchesFromMedium) : Mathf.Max(3, initialBranchesFromMedium);
                     GrowLoopingBranchesFromMedium(large, minBranches, Mathf.Max(4, initialStepsPerMediumBranch));
@@ -766,17 +796,10 @@ public class SimpleLevelGenerator : MonoBehaviour
             // Place the dedicated spawn room
             PlaceSpawnRoom();
 
-            // Force-run capping AFTER everything is placed to catch all anchors
+            // === FINAL STEP: Cap unconnected anchors AFTER all generation is complete ===
             if (sealOpenAnchorsAtEnd && doorCapPrefab != null)
             {
-                // Run capping multiple times to ensure ALL anchors get capped
-                ForceCapAllOpenAnchors();
-                
-                // Run one more aggressive pass to catch any missed anchors
-                FinalAggressiveCapping();
-                
-                // Ultra-aggressive final pass - cap EVERYTHING that looks like an anchor
-                UltraAggressiveCapping();
+                CapUnconnectedAnchorsAfterGeneration();
             }
 
             // Player spawning will be handled separately by PlayerSpawner component
@@ -994,8 +1017,13 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
 
         // Mark anchors as connected
+        Debug.Log($"[Gen] MARKING AS CONNECTED: {anchor.name} at {anchor.position}");
         connectedAnchors.Add(anchor);
-        if (placedEntryAnchor) connectedAnchors.Add(placedEntryAnchor);
+        if (placedEntryAnchor) 
+        {
+            Debug.Log($"[Gen] MARKING AS CONNECTED: {placedEntryAnchor.name} at {placedEntryAnchor.position}");
+            connectedAnchors.Add(placedEntryAnchor);
+        }
 
         if (logGeneration)
         {
@@ -1556,8 +1584,13 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (placedEntryAnchor && availableAnchors.Contains(placedEntryAnchor)) availableAnchors.Remove(placedEntryAnchor);
             
             // Mark anchors as connected
+            Debug.Log($"[Gen] SPAWN ROOM - MARKING AS CONNECTED: {targetAnchor.name} at {targetAnchor.position}");
             connectedAnchors.Add(targetAnchor);
-            if (placedEntryAnchor) connectedAnchors.Add(placedEntryAnchor);
+            if (placedEntryAnchor) 
+            {
+                Debug.Log($"[Gen] SPAWN ROOM - MARKING AS CONNECTED: {placedEntryAnchor.name} at {placedEntryAnchor.position}");
+                connectedAnchors.Add(placedEntryAnchor);
+            }
             
             Debug.Log($"[Gen] Placed spawn room naturally at {placedSpawnRoom.position} connected to {GetModuleRootForAnchor(targetAnchor)?.name}");
             
@@ -2639,6 +2672,14 @@ public class SimpleLevelGenerator : MonoBehaviour
             return false;
         }
         
+        // ROBUST CONNECTION CHECK: Verify anchor actually has a nearby hallway connection
+        bool hasVerifiedConnection = VerifyAnchorHasActiveConnection(a);
+        if (hasVerifiedConnection)
+        {
+            Debug.Log($"[Gen] Anchor {a.name} has verified active connection - not capping");
+            return false;
+        }
+        
         // Get anchor owner once for all checks
         Transform anchorOwner = GetModuleRootForAnchor(a);
         
@@ -2718,6 +2759,369 @@ public class SimpleLevelGenerator : MonoBehaviour
         return true; // Anchor is open and should be capped
     }
 
+    bool VerifyAnchorHasActiveConnection(Transform anchor)
+    {
+        if (!anchor) return false;
+        
+        // Check all placed modules for nearby hallway connections
+        foreach (Transform module in placedModules)
+        {
+            if (!module) continue;
+            
+            // Only check hallway modules
+            RoomMeta meta = module.GetComponent<RoomMeta>();
+            if (meta == null || meta.category != RoomCategory.Hallway) continue;
+            
+            // Get all anchors in this hallway module
+            var hallwayAnchors = new List<Transform>();
+            CollectAnchorsIntoList(module, hallwayAnchors);
+            
+            foreach (Transform hallAnchor in hallwayAnchors)
+            {
+                if (!hallAnchor || hallAnchor == anchor) continue;
+                
+                // Check if on same floor
+                float yDiff = Mathf.Abs(anchor.position.y - hallAnchor.position.y);
+                if (yDiff > 2f) continue; // Different floors
+                
+                // Check distance
+                float distance = Vector3.Distance(anchor.position, hallAnchor.position);
+                if (distance < connectionDistance * 1.2f) // Generous threshold
+                {
+                    // Check if they're roughly facing each other
+                    float dot = Vector3.Dot(anchor.forward, -hallAnchor.forward);
+                    if (dot > -0.8f) // Fairly lenient facing check
+                    {
+                        Debug.Log($"[Gen] VERIFIED connection: {anchor.name} <-> {hallAnchor.name} (module: {module.name}, distance: {distance:F2}, dot: {dot:F2})");
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false; // No verified connection found
+    }
+
+    void CapTrulyIsolatedAnchorsOnly()
+    {
+        Debug.Log("[Gen] === SIMPLE ISOLATED CAPPING - NO COMPLEX LOGIC ===");
+        
+        // Get every single anchor in the level
+        var allAnchors = GatherAllAnchorsInLevel();
+        Debug.Log($"[Gen] Found {allAnchors.Count} total anchors in level");
+        
+        foreach (Transform anchor in allAnchors)
+        {
+            if (!anchor) continue;
+            
+            // Skip if already has a cap
+            bool hasCapChild = false;
+            foreach (Transform child in anchor)
+            {
+                if (child.name.StartsWith("DoorCap_"))
+                {
+                    hasCapChild = true;
+                    break;
+                }
+            }
+            if (hasCapChild) 
+            {
+                Debug.Log($"[Gen] Skipping {anchor.name} - already has cap");
+                continue;
+            }
+            
+            // Check if ANY other anchor is within connection distance on the same floor
+            bool hasNearbyPartner = false;
+            foreach (Transform other in allAnchors)
+            {
+                if (other == anchor || !other) continue;
+                
+                // Same floor check
+                float yDiff = Mathf.Abs(anchor.position.y - other.position.y);
+                if (yDiff > 2f) continue;
+                
+                float distance = Vector3.Distance(anchor.position, other.position);
+                if (distance < connectionDistance)
+                {
+                    hasNearbyPartner = true;
+                    Debug.Log($"[Gen] {anchor.name} has nearby partner {other.name} at {distance:F2} - NOT capping");
+                    break;
+                }
+            }
+            
+            // ONLY cap if completely isolated
+            if (!hasNearbyPartner)
+            {
+                Transform owner = GetModuleRootForAnchor(anchor);
+                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoom = meta != null && meta.category == RoomCategory.Room;
+                
+                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
+                if (prefab != null)
+                {
+                    try
+                    {
+                        PlaceCapAtAnchor(prefab, anchor, owner);
+                        Debug.Log($"[Gen] CAPPED isolated anchor: {anchor.name} (no partners within {connectionDistance})");
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError($"[Gen] Failed to cap {anchor.name}: {e.Message}");
+                    }
+                }
+            }
+        }
+        
+        Debug.Log("[Gen] === SIMPLE ISOLATED CAPPING COMPLETE ===");
+    }
+
+    void CapUnconnectedAnchorsAfterGeneration()
+    {
+        Debug.Log("[Gen] === CAPPING UNCONNECTED ANCHORS AFTER COMPLETE GENERATION ===");
+        
+        // DEBUGGING: Check if levelRoot exists and has children
+        if (levelRoot == null)
+        {
+            Debug.LogError("[Gen] PROBLEM: levelRoot is null!");
+            return;
+        }
+        
+        Debug.Log($"[Gen] LevelRoot: {levelRoot.name}, child count: {levelRoot.childCount}");
+        for (int i = 0; i < levelRoot.childCount; i++)
+        {
+            var child = levelRoot.GetChild(i);
+            Debug.Log($"[Gen] LevelRoot child {i}: {child.name}");
+        }
+        
+        // Get all anchors in the completed level
+        var allAnchors = GatherAllAnchorsInLevel();
+        Debug.Log($"[Gen] GatherAllAnchorsInLevel returned {allAnchors.Count} anchors");
+        Debug.Log($"[Gen] connectedAnchors HashSet contains {connectedAnchors.Count} anchors");
+        
+        // Show which anchors are in connectedAnchors
+        Debug.Log($"[Gen] === FINAL connectedAnchors HashSet BEFORE CAPPING ===");
+        Debug.Log($"[Gen] connectedAnchors contains {connectedAnchors.Count} anchors:");
+        int debugCount = 0;
+        foreach (Transform connected in connectedAnchors)
+        {
+            if (connected)
+            {
+                debugCount++;
+                Debug.Log($"[Gen]   {debugCount}. {connected.name} at {connected.position}");
+            }
+            else
+            {
+                Debug.LogWarning($"[Gen]   ⚠️ NULL anchor in connectedAnchors!");
+            }
+        }
+        Debug.Log($"[Gen] === END connectedAnchors LIST ===");
+        
+        // DEBUGGING: Show first few anchors found
+        for (int i = 0; i < Mathf.Min(5, allAnchors.Count); i++)
+        {
+            if (allAnchors[i])
+                Debug.Log($"[Gen] Anchor {i}: {allAnchors[i].name} at {allAnchors[i].position}");
+        }
+        
+        int capsPlaced = 0;
+        int anchorsChecked = 0;
+        int anchorsWithCaps = 0;
+        int anchorsConnected = 0;
+        
+        foreach (Transform anchor in allAnchors)
+        {
+            if (!anchor) continue;
+            anchorsChecked++;
+            
+            Debug.Log($"[Gen] Checking anchor: {anchor.name} at {anchor.position}");
+            
+            // Skip if already has a door cap
+            bool alreadyHasCap = false;
+            foreach (Transform child in anchor)
+            {
+                if (child.name.StartsWith("DoorCap_"))
+                {
+                    alreadyHasCap = true;
+                    break;
+                }
+            }
+            if (alreadyHasCap) 
+            {
+                anchorsWithCaps++;
+                Debug.Log($"[Gen] {anchor.name} already has cap - skipping");
+                continue;
+            }
+            
+            // USE THE DEFINITIVE SOURCE: connectedAnchors HashSet from generation
+            bool isActuallyConnected = connectedAnchors.Contains(anchor);
+            
+            // EXTENSIVE DEBUGGING: Let's see what's really happening
+            Debug.Log($"[Gen] === DEBUGGING ANCHOR: {anchor.name} at {anchor.position} ===");
+            Debug.Log($"[Gen] Is in connectedAnchors HashSet: {isActuallyConnected}");
+            
+            // Check for nearby anchors manually
+            var nearbyAnchors = new List<Transform>();
+            foreach (Transform other in allAnchors)
+            {
+                if (other == anchor || !other) continue;
+                float dist = Vector3.Distance(anchor.position, other.position);
+                if (dist < 3f) // Very close
+                {
+                    nearbyAnchors.Add(other);
+                    Debug.Log($"[Gen]   Nearby anchor: {other.name} at {other.position} (distance: {dist:F2})");
+                    Debug.Log($"[Gen]   Other anchor in connectedAnchors: {connectedAnchors.Contains(other)}");
+                }
+            }
+            
+            // Check if there's already a hallway/module connected
+            Transform anchorParent = anchor.parent;
+            if (anchorParent)
+            {
+                Debug.Log($"[Gen]   Anchor parent: {anchorParent.name}");
+                RoomMeta parentMeta = anchorParent.GetComponent<RoomMeta>();
+                if (parentMeta)
+                {
+                    Debug.Log($"[Gen]   Parent category: {parentMeta.category}");
+                }
+            }
+            
+            if (isActuallyConnected)
+            {
+                anchorsConnected++;
+                Debug.Log($"[Gen] {anchor.name} is in connectedAnchors - DEFINITELY connected, NOT capping");
+            }
+            else
+            {
+                Debug.Log($"[Gen] {anchor.name} is NOT in connectedAnchors - DEFINITELY unconnected, WILL cap");
+                if (nearbyAnchors.Count > 0)
+                {
+                    Debug.LogWarning($"[Gen] ⚠️ SUSPICIOUS: {anchor.name} has nearby anchors but isn't in connectedAnchors!");
+                }
+            }
+            
+            bool isConnected = isActuallyConnected;
+            
+            // If not connected, cap it
+            if (!isConnected)
+            {
+                Transform owner = GetModuleRootForAnchor(anchor);
+                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoom = meta != null && meta.category == RoomCategory.Room;
+                
+                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
+                if (prefab == null) prefab = doorCapPrefab;
+                
+                if (prefab != null)
+                {
+                    try
+                    {
+                        PlaceCapAtAnchor(prefab, anchor, owner);
+                        capsPlaced++;
+                        Debug.Log($"[Gen] Capped unconnected anchor: {anchor.name}");
+                        
+                        // IMPORTANT: Don't count caps against module limit
+                        // (PlaceCapAtAnchor already adds to placedModules, but we don't enforce limits on caps)
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError($"[Gen] Failed to cap anchor {anchor.name}: {e.Message}");
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"[Gen] === CAPPING COMPLETE ===");
+        Debug.Log($"[Gen] Anchors checked: {anchorsChecked}");
+        Debug.Log($"[Gen] Anchors with existing caps: {anchorsWithCaps}");
+        Debug.Log($"[Gen] Anchors found connected: {anchorsConnected}");
+        Debug.Log($"[Gen] Door caps placed: {capsPlaced}");
+        Debug.Log($"[Gen] Door caps are NOT counted against module limits - only rooms and halls count");
+    }
+
+    bool HasOverlappingDoorTriggers(Transform anchor)
+    {
+        if (!anchor) return false;
+        
+        // Find the DoorTrigger collider on this anchor
+        Collider anchorTrigger = null;
+        
+        // Check the anchor itself for a collider
+        var anchorCollider = anchor.GetComponent<Collider>();
+        if (anchorCollider && anchorCollider.isTrigger)
+        {
+            anchorTrigger = anchorCollider;
+        }
+        
+        // If not found, check children for DoorTrigger colliders
+        if (anchorTrigger == null)
+        {
+            var childColliders = anchor.GetComponentsInChildren<Collider>();
+            foreach (var collider in childColliders)
+            {
+                if (collider.isTrigger)
+                {
+                    anchorTrigger = collider;
+                    break;
+                }
+            }
+        }
+        
+        if (anchorTrigger == null)
+        {
+            Debug.Log($"[Gen] {anchor.name} has no trigger collider - cannot check for overlaps");
+            return false;
+        }
+        
+        Debug.Log($"[Gen] Checking {anchor.name} trigger collider: {anchorTrigger.name} (bounds: {anchorTrigger.bounds})");
+        
+        // Check for overlapping trigger colliders from other anchors
+        Bounds anchorBounds = anchorTrigger.bounds;
+        
+        // Use Physics.OverlapBox to find overlapping colliders
+        Vector3 center = anchorBounds.center;
+        Vector3 halfExtents = anchorBounds.extents;
+        Quaternion orientation = anchorTrigger.transform.rotation;
+        
+        Collider[] overlapping = Physics.OverlapBox(center, halfExtents, orientation);
+        
+        foreach (Collider other in overlapping)
+        {
+            if (other == anchorTrigger) continue; // Skip self
+            if (!other.isTrigger) continue; // Only check trigger colliders
+            
+            // Check if this overlapping collider belongs to a different anchor
+            Transform otherAnchor = other.transform;
+            while (otherAnchor != null && !otherAnchor.name.Contains("Anchor"))
+            {
+                otherAnchor = otherAnchor.parent;
+            }
+            
+            if (otherAnchor != null && otherAnchor != anchor)
+            {
+                // Get the modules these anchors belong to
+                Transform anchorModule = GetModuleRootForAnchor(anchor);
+                Transform otherModule = GetModuleRootForAnchor(otherAnchor);
+                
+                Debug.Log($"[Gen] {anchor.name} (module: {(anchorModule ? anchorModule.name : "unknown")}) trigger overlaps with {otherAnchor.name} (module: {(otherModule ? otherModule.name : "unknown")}) - CONNECTED!");
+                
+                // Check if this is problematic overlap (same position modules)
+                if (anchorModule && otherModule && anchorModule != otherModule)
+                {
+                    float moduleDistance = Vector3.Distance(anchorModule.position, otherModule.position);
+                    if (moduleDistance < 5f) // Very close modules might be overlapping badly
+                    {
+                        Debug.LogWarning($"[Gen] POTENTIAL OVERLAP ISSUE: Modules {anchorModule.name} and {otherModule.name} are very close ({moduleDistance:F2}m) - this might be bad connector placement!");
+                    }
+                }
+                
+                return true;
+            }
+        }
+        
+        Debug.Log($"[Gen] {anchor.name} trigger found no overlapping anchor triggers");
+        return false;
+    }
+
     void PlaceCapAtAnchor(GameObject capPrefab, Transform targetAnchor, Transform parent)
     {
         if (!capPrefab || !targetAnchor) return;
@@ -2735,7 +3139,8 @@ public class SimpleLevelGenerator : MonoBehaviour
             Vector3 delta = pivot.position - inst.transform.position;
             inst.transform.position = desired - delta;
         }
-        connectedAnchors.Add(targetAnchor);
+        // DO NOT add to connectedAnchors - door caps are for UNCONNECTED anchors!
+        // connectedAnchors.Add(targetAnchor); // REMOVED - this was corrupting the connection tracking
         
         // IMPORTANT: Add the door cap to placedModules list but DON'T count it against module limits
         // Door caps are essential for completing the level and should never be limited
