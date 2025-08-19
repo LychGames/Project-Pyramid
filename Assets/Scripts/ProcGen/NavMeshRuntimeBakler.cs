@@ -52,18 +52,33 @@ public class NavMeshRuntimeBaker : MonoBehaviour
 
     void DoBake()
     {
+        if (surface == null)
+        {
+            Debug.LogError($"[NavMeshRuntimeBaker] NavMeshSurface is null on '{name}'. Cannot bake.");
+            return;
+        }
+
         IsBaking = true;
         OnBakingChanged?.Invoke(true);
 
-        var t0 = Time.realtimeSinceStartup;
-        surface.BuildNavMesh(); // synchronous
-        if (logDuration)
+        try
         {
-            var ms = (Time.realtimeSinceStartup - t0) * 1000f;
-            Debug.Log($"[NavMeshRuntimeBaker] Bake completed in {ms:0.0} ms on '{name}'.");
+            var t0 = Time.realtimeSinceStartup;
+            surface.BuildNavMesh(); // synchronous
+            if (logDuration)
+            {
+                var ms = (Time.realtimeSinceStartup - t0) * 1000f;
+                Debug.Log($"[NavMeshRuntimeBaker] Bake completed in {ms:0.0} ms on '{name}'.");
+            }
         }
-
-        IsBaking = false;
-        OnBakingChanged?.Invoke(false);
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[NavMeshRuntimeBaker] Failed to bake NavMesh on '{name}': {e.Message}");
+        }
+        finally
+        {
+            IsBaking = false;
+            OnBakingChanged?.Invoke(false);
+        }
     }
 }

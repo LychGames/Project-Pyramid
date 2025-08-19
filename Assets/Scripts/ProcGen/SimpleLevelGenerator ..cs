@@ -22,7 +22,9 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] GameObject startRoomPrefab;  // Your 10m equilateral triangle
     [SerializeField] bool startIsVirtual = false;
     [Tooltip("If true, do not place a start room; begin from a pre-placed medium room instead.")]
-    [SerializeField] bool startFromMediumRoom = true;
+    [SerializeField] bool startFromMediumRoom = false;
+    [Tooltip("If true, begin from a pre-placed large room instead of start/medium. RECOMMENDED for party games like Lethal Company style.")]
+    [SerializeField] bool startFromLargeRoom = true;
 
     [Header("Prefab Lists")]
     [SerializeField] GameObject[] hallwayPrefabs;     // NewHall, HallLeft15, HallRight15, HallLeft30, HallRight30
@@ -93,6 +95,16 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] int mediumAnchorTryLimit = 25;
     [Tooltip("Pre-place a medium room at a lattice-aligned position before growth")] 
     [SerializeField] bool preplaceMediumRoom = true;
+    
+    [Header("Small Room Settings")]
+    [Tooltip("Boost the chance of placing small rooms during generation")]
+    [SerializeField] float smallRoomChanceBoost = 0.3f; // Add 30% to small room chance
+    [Tooltip("Target number of small rooms to place per level")]
+    [SerializeField] int targetSmallRooms = 3;
+    
+    [Header("Spawn Room Settings")]
+    [Tooltip("Dedicated spawn room prefab (should contain PlayerSpawn tag or SpawnPoint component)")]
+    [SerializeField] GameObject spawnRoomPrefab;
     [Tooltip("Distance in cells from start (origin) to pre-place the medium room")] 
     [SerializeField] int mediumDistanceCells = 6;
     [Tooltip("Yaw index 0..5 for multiples of 60 degrees (0=+Z, 1=60°, 2=120°,...)")]
@@ -135,6 +147,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] private int minLoopConnectorsBeforeMediumRooms = 2; // gate medium rooms until some loops are formed
     private int loopConnectorsPlaced = 0;
     private Transform lastMediumRoot = null;
+    private Transform lastLargeRoot = null;
 
     // Replication hook: subscribers (e.g., networking) can listen for placements
     public event System.Action<GameObject, Vector3, Quaternion, Transform> ModulePlaced;
@@ -158,6 +171,500 @@ public class SimpleLevelGenerator : MonoBehaviour
             clearButton = false;
             ClearLevel();
         }
+    }
+
+    [ContextMenu("Configure for Lethal Company Style")]
+    public void ConfigureForLethalCompanyStyle()
+    {
+        startFromLargeRoom = true;
+        startFromMediumRoom = false;
+        startIsVirtual = false;
+        sealOpenAnchorsAtEnd = true;
+        spawnPlayerOnComplete = false; // Player spawning handled by PlayerSpawner component
+        initialBranchesFromMedium = Mathf.Max(2, initialBranchesFromMedium);
+        reserveModulesForCaps = 0; // No need to reserve - door capping ignores module limits now!
+        
+        // Boost small room frequency for variety
+        smallRoomChanceBoost = 0.4f; // 40% boost for small rooms
+        targetSmallRooms = 4; // Try to place at least 4 small rooms
+        
+        // Spawn room will be placed naturally within the generated level
+        
+        Debug.Log("[Gen] Configured for Lethal Company style: starts from large room, boosts small room spawning, dedicated spawn room, ALL doorways capped");
+    }
+
+    [ContextMenu("Force Cap All Open Anchors")]
+    public void ForceCapAllOpenAnchorsManual()
+    {
+        ForceCapAllOpenAnchors();
+    }
+
+    [ContextMenu("Final Aggressive Capping")]
+    public void FinalAggressiveCappingManual()
+    {
+        FinalAggressiveCapping();
+    }
+
+    [ContextMenu("Ultra Aggressive Capping")]
+    public void UltraAggressiveCappingManual()
+    {
+        UltraAggressiveCapping();
+    }
+
+    [ContextMenu("Simple Cap Unconnected Anchors")]
+    public void SimpleCapUnconnectedAnchorsManual()
+    {
+        SimpleCapUnconnectedAnchors();
+    }
+
+    [ContextMenu("Nuclear Option - Cap EVERYTHING")]
+    public void NuclearCapEverything()
+    {
+        Debug.Log("[Gen] NUCLEAR OPTION - Capping EVERY anchor with no checks...");
+        
+        var allTransforms = new List<Transform>();
+        GetAllTransformsRecursive(levelRoot, allTransforms);
+        
+        int cappedCount = 0;
+        foreach (Transform t in allTransforms)
+        {
+            if (t && t.name.IndexOf("Anchor", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                // Skip if it's already a door cap
+                if (t.name.StartsWith("DoorCap_")) continue;
+                
+                // Skip if it already has a cap child
+                bool hasCapChild = false;
+                foreach (Transform child in t)
+                {
+                    if (child.name.StartsWith("DoorCap_"))
+                    {
+                        hasCapChild = true;
+                        break;
+                    }
+                }
+                if (hasCapChild) continue;
+                
+                // CAP IT - NO QUESTIONS ASKED
+                Transform owner = GetModuleRootForAnchor(t);
+                if (owner == null) owner = t.parent;
+                if (owner == null) owner = levelRoot;
+                
+                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
+
+                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
+                                    : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
+                if (prefab == null) prefab = doorCapPrefab;
+
+                if (prefab != null)
+                {
+                    try
+                    {
+                        PlaceCapAtAnchor(prefab, t, owner);
+                        cappedCount++;
+                        Debug.Log($"[Gen] NUCLEAR: Capped {t.name} at {t.position}");
+                    }
+                    catch (System.Exception e)
+                    {
+                        Debug.LogError($"[Gen] NUCLEAR: Failed to cap {t.name}: {e.Message}");
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"[Gen] NUCLEAR OPTION complete. Capped {cappedCount} anchors with ZERO checks.");
+    }
+
+    void CapRemainingLargeRoomAnchors(Transform largeRoom)
+    {
+        if (!largeRoom || !doorCapPrefab) return;
+        
+        Debug.Log($"[Gen] Managing large room doorways for {largeRoom.name}");
+        
+        // Get all anchors on the large room
+        var largeRoomAnchors = new List<Transform>();
+        CollectAnchorsIntoList(largeRoom, largeRoomAnchors);
+        
+        // Count how many are already connected (have halls)
+        int connectedCount = 0;
+        var unconnectedAnchors = new List<Transform>();
+        
+        foreach (Transform anchor in largeRoomAnchors)
+        {
+            if (!anchor) continue;
+            
+            if (connectedAnchors.Contains(anchor))
+            {
+                connectedCount++;
+                Debug.Log($"[Gen] Large room anchor {anchor.name} is connected");
+            }
+            else
+            {
+                // Check if it has a cap already
+                bool hasCapChild = false;
+                foreach (Transform child in anchor)
+                {
+                    if (child.name.StartsWith("DoorCap_"))
+                    {
+                        hasCapChild = true;
+                        break;
+                    }
+                }
+                if (!hasCapChild)
+                {
+                    unconnectedAnchors.Add(anchor);
+                }
+            }
+        }
+        
+        Debug.Log($"[Gen] Large room has {connectedCount} connected anchors, {unconnectedAnchors.Count} unconnected");
+        
+        // Ensure we have 2-3 connections
+        if (connectedCount < 2)
+        {
+            Debug.LogWarning($"[Gen] Large room only has {connectedCount} connections, should have at least 2!");
+        }
+        else if (connectedCount > 3)
+        {
+            Debug.LogWarning($"[Gen] Large room has {connectedCount} connections, maximum should be 3!");
+        }
+        
+        // Cap excess unconnected anchors to maintain 2-3 open doorways
+        int targetOpenDoorways = Mathf.Clamp(3 - connectedCount, 0, unconnectedAnchors.Count);
+        int anchorsToCapCount = unconnectedAnchors.Count - targetOpenDoorways;
+        
+        if (anchorsToCapCount > 0)
+        {
+            Debug.Log($"[Gen] Capping {anchorsToCapCount} anchors to maintain 2-3 open doorways");
+            
+            for (int i = 0; i < anchorsToCapCount && i < unconnectedAnchors.Count; i++)
+            {
+                Transform anchor = unconnectedAnchors[i];
+                try
+                {
+                    GameObject prefab = roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
+                    PlaceCapAtAnchor(prefab, anchor, largeRoom);
+                    Debug.Log($"[Gen] Large room capped: {anchor.name}");
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[Gen] Failed to cap large room anchor {anchor.name}: {e.Message}");
+                }
+            }
+        }
+        else
+        {
+            Debug.Log($"[Gen] Large room doorway count is appropriate, no additional capping needed");
+        }
+    }
+
+    [ContextMenu("Force Level to Ground Level")]
+    public void ForceLevelToGroundLevel()
+    {
+        int modulesAdjusted = 0;
+        foreach (Transform module in placedModules)
+        {
+            if (module && module.position.y != 0f)
+            {
+                Vector3 pos = module.position;
+                float oldY = pos.y;
+                pos.y = 0f;
+                module.position = pos;
+                modulesAdjusted++;
+                Debug.Log($"[Gen] Moved {module.name} from Y={oldY} to Y=0");
+            }
+        }
+        Debug.Log($"[Gen] Forced {modulesAdjusted} modules to ground level (Y=0)");
+    }
+
+    void FinalAggressiveCapping()
+    {
+        Debug.Log("[Gen] Running final aggressive capping pass...");
+        
+        // Get ALL transforms in the level that might be anchors
+        var allTransforms = new List<Transform>();
+        GetAllTransformsRecursive(levelRoot, allTransforms);
+        
+        var uncappedAnchors = new List<Transform>();
+        int totalAnchorsFound = 0;
+        
+        foreach (Transform t in allTransforms)
+        {
+            // Check if this looks like an anchor
+            if (t.name.IndexOf("Anchor", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                totalAnchorsFound++;
+                
+                // Skip if it's already a door cap
+                Transform owner = GetModuleRootForAnchor(t);
+                if (owner != null && owner.name.StartsWith("DoorCap_")) continue;
+                
+                // PROTECTION: Skip large room anchors to prevent blocking doorways
+                if (owner == lastLargeRoot)
+                {
+                    Debug.Log($"[Gen] FINAL pass skipping large room anchor {t.name} - protecting large room exits");
+                    continue;
+                }
+                
+                // Skip if it has a door cap child
+                bool hasCapChild = false;
+                foreach (Transform child in t)
+                {
+                    if (child.name.StartsWith("DoorCap_"))
+                    {
+                        hasCapChild = true;
+                        break;
+                    }
+                }
+                if (hasCapChild) continue;
+                
+                // Check if it's really open (very permissive check)
+                if (!connectedAnchors.Contains(t))
+                {
+                    Transform partner = FindPartnerAnchor(t);
+                    if (partner == null || Vector3.Distance(t.position, partner.position) > connectionDistance)
+                    {
+                        uncappedAnchors.Add(t);
+                        Debug.Log($"[Gen] Final pass found uncapped anchor: {t.name} at {t.position} (owner: {(owner ? owner.name : "null")})");
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"[Gen] Final aggressive pass: Found {totalAnchorsFound} total anchors, {uncappedAnchors.Count} still uncapped");
+        
+        // Cap all remaining uncapped anchors
+        foreach (Transform anchor in uncappedAnchors)
+        {
+            if (!anchor) continue;
+            
+            Transform owner = GetModuleRootForAnchor(anchor);
+            RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+            bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
+
+            GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
+                                : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
+            if (prefab == null) prefab = doorCapPrefab;
+
+            if (prefab != null)
+            {
+                PlaceCapAtAnchor(prefab, anchor, owner != null ? owner : levelRoot);
+                connectedAnchors.Add(anchor);
+                Debug.Log($"[Gen] Final pass capped: {anchor.name} at {anchor.position}");
+            }
+        }
+        
+        Debug.Log($"[Gen] Final aggressive capping complete. Capped {uncappedAnchors.Count} additional anchors.");
+    }
+
+    void GetAllTransformsRecursive(Transform root, List<Transform> result)
+    {
+        if (!root) return;
+        
+        result.Add(root);
+        foreach (Transform child in root)
+        {
+            GetAllTransformsRecursive(child, result);
+        }
+    }
+
+    void UltraAggressiveCapping()
+    {
+        Debug.Log("[Gen] Running ULTRA-aggressive capping pass - will cap EVERYTHING that looks like an anchor...");
+        
+        // Get absolutely EVERYTHING in the level
+        var allTransforms = new List<Transform>();
+        GetAllTransformsRecursive(levelRoot, allTransforms);
+        
+        var uncappedAnchors = new List<Transform>();
+        int totalChecked = 0;
+        
+        foreach (Transform t in allTransforms)
+        {
+            // Ultra-permissive anchor detection - anything with "Anchor" in the name
+            if (t && t.name.IndexOf("Anchor", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                totalChecked++;
+                
+                // Skip if it's already a door cap or has a door cap child
+                if (t.name.StartsWith("DoorCap_")) continue;
+                
+                bool hasCapChild = false;
+                bool hasCapSibling = false;
+                
+                // Check children for caps
+                foreach (Transform child in t)
+                {
+                    if (child.name.StartsWith("DoorCap_"))
+                    {
+                        hasCapChild = true;
+                        break;
+                    }
+                }
+                
+                // Check siblings for caps (in case cap is at same level)
+                if (t.parent != null)
+                {
+                    foreach (Transform sibling in t.parent)
+                    {
+                        if (sibling != t && sibling.name.StartsWith("DoorCap_") && 
+                            Vector3.Distance(sibling.position, t.position) < 2f)
+                        {
+                            hasCapSibling = true;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!hasCapChild && !hasCapSibling)
+                {
+                    // Check if there's anything very close that might be connected
+                    bool hasVeryClosePartner = false;
+                    foreach (Transform other in allTransforms)
+                    {
+                        if (other != t && other.name.IndexOf("Anchor", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            float dist = Vector3.Distance(t.position, other.position);
+                            // Use a more lenient distance for junction detection - junctions can have weird spacing
+                            if (dist < 4f) // Increased to 4f for large room connections
+                            {
+                                // Additional check: make sure they're roughly facing each other (opposite directions)
+                                // OR if they're very close (< 1f), assume they're connected regardless of direction
+                                float dot = Vector3.Dot(t.forward, other.forward);
+                                if (dot < -0.3f || dist < 1f) // More lenient direction check OR very close
+                                {
+                                    hasVeryClosePartner = true;
+                                    Debug.Log($"[Gen] ULTRA pass skipping {t.name} - found partner {other.name} at distance {dist:F2}, dot {dot:F2}");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (!hasVeryClosePartner)
+                    {
+                        uncappedAnchors.Add(t);
+                        Debug.Log($"[Gen] ULTRA pass found uncapped: {t.name} at {t.position} (parent: {(t.parent ? t.parent.name : "null")})");
+                    }
+                }
+            }
+        }
+        
+        Debug.Log($"[Gen] ULTRA-aggressive pass: Checked {totalChecked} potential anchors, found {uncappedAnchors.Count} to cap");
+        
+        // Cap everything found
+        foreach (Transform anchor in uncappedAnchors)
+        {
+            if (!anchor) continue;
+            
+            Transform owner = GetModuleRootForAnchor(anchor);
+            if (owner == null) owner = anchor.parent; // Fallback to parent
+            if (owner == null) owner = levelRoot; // Ultimate fallback
+            
+            // PROTECTION: Skip large room anchors to prevent blocking doorways
+            if (owner == lastLargeRoot)
+            {
+                Debug.Log($"[Gen] ULTRA pass skipping large room anchor {anchor.name} - protecting large room exits");
+                continue;
+            }
+            
+            RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+            bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
+
+            GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
+                                : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
+            if (prefab == null) prefab = doorCapPrefab;
+
+            if (prefab != null)
+            {
+                try
+                {
+                    PlaceCapAtAnchor(prefab, anchor, owner);
+                    Debug.Log($"[Gen] ULTRA pass capped: {anchor.name} at {anchor.position}");
+                }
+                catch (System.Exception e)
+                {
+                    Debug.LogError($"[Gen] Failed to cap {anchor.name}: {e.Message}");
+                }
+            }
+        }
+        
+        Debug.Log($"[Gen] ULTRA-aggressive capping complete. Attempted to cap {uncappedAnchors.Count} additional anchors.");
+    }
+
+    void SimpleCapUnconnectedAnchors()
+    {
+        Debug.Log("[Gen] === SIMPLE CAPPING: Only capping truly isolated anchors ===");
+        
+        // Get all anchors in the level
+        var allAnchors = GatherAllAnchorsInLevel();
+        var anchorsToCap = new List<Transform>();
+        
+        foreach (Transform anchor in allAnchors)
+        {
+            if (!anchor) continue;
+            
+            // Skip if already has a cap
+            bool hasCapChild = false;
+            foreach (Transform child in anchor)
+            {
+                if (child.name.StartsWith("DoorCap_"))
+                {
+                    hasCapChild = true;
+                    break;
+                }
+            }
+            if (hasCapChild) continue;
+            
+            // Check if this anchor has ANY other anchor within connection distance
+            bool hasNearbyPartner = false;
+            foreach (Transform otherAnchor in allAnchors)
+            {
+                if (otherAnchor == anchor || !otherAnchor) continue;
+                
+                float distance = Vector3.Distance(anchor.position, otherAnchor.position);
+                if (distance < connectionDistance)
+                {
+                    hasNearbyPartner = true;
+                    Debug.Log($"[Gen] Anchor {anchor.name} has nearby partner {otherAnchor.name} at distance {distance:F2} - NOT capping");
+                    break;
+                }
+            }
+            
+            // Only cap if truly isolated
+            if (!hasNearbyPartner)
+            {
+                anchorsToCap.Add(anchor);
+                Debug.Log($"[Gen] Anchor {anchor.name} is isolated - WILL cap");
+            }
+        }
+        
+        // Cap the isolated anchors
+        int cappedCount = 0;
+        foreach (Transform anchor in anchorsToCap)
+        {
+            try
+            {
+                Transform owner = GetModuleRootForAnchor(anchor);
+                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoom = meta != null && meta.category == RoomCategory.Room;
+                
+                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
+                if (prefab != null)
+                {
+                    PlaceCapAtAnchor(prefab, anchor, owner);
+                    cappedCount++;
+                    Debug.Log($"[Gen] SIMPLE capped isolated anchor: {anchor.name}");
+                }
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[Gen] Failed to cap anchor {anchor.name}: {e.Message}");
+            }
+        }
+        
+        Debug.Log($"[Gen] === SIMPLE CAPPING COMPLETE: Capped {cappedCount} truly isolated anchors ===");
     }
 
     [ContextMenu("Generate Level")]
@@ -188,7 +695,7 @@ public class SimpleLevelGenerator : MonoBehaviour
 
             ClearLevel();
 
-            if (!startFromMediumRoom)
+            if (!startFromMediumRoom && !startFromLargeRoom)
             {
                 // Place start room
                 Transform startRoot = PlaceStartRoom();
@@ -209,15 +716,36 @@ public class SimpleLevelGenerator : MonoBehaviour
             }
 
             // Generate the level
-            if (!startFromMediumRoom && forceInitialGrowthFromAllStartAnchors)
+            if (!startFromMediumRoom && !startFromLargeRoom && forceInitialGrowthFromAllStartAnchors)
             {
                 var startAnchors = new List<Transform>(availableAnchors);
                 GrowFromInitialAnchors(startAnchors, Mathf.Max(1, initialStepsPerStart));
             }
 
             // Pre-place a medium room on the lattice and fan out from multiple doors
+            // Pre-place LARGE first if requested
             Transform mediumRootPlaced = null;
-            if (preplaceMediumRoom)
+            if (startFromLargeRoom || (!startFromMediumRoom && preplaceMediumRoom))
+            {
+                var large = TryPreplaceLargeRoom();
+                if (large)
+                {
+                    lastLargeRoot = large;
+                    // Ensure at least 3 branches from large room (minimum 2 exits, preferably 3)
+                    int minBranches = startFromLargeRoom ? Mathf.Max(2, initialBranchesFromMedium) : Mathf.Max(3, initialBranchesFromMedium);
+                    GrowLoopingBranchesFromMedium(large, minBranches, Mathf.Max(4, initialStepsPerMediumBranch));
+                    
+                    // DISABLED: Don't cap large room early - let it stay open for later connections
+                    // CapRemainingLargeRoomAnchors(large);
+                }
+                else if (startFromLargeRoom)
+                {
+                    Debug.LogError("[Gen] Failed to place large room as requested start! Cannot proceed without large room.");
+                    return;
+                }
+            }
+            // Then medium if desired
+            if (preplaceMediumRoom && !startFromLargeRoom)
             {
                 mediumRootPlaced = TryPreplaceMediumRoom();
                 if (mediumRootPlaced)
@@ -231,19 +759,28 @@ public class SimpleLevelGenerator : MonoBehaviour
 
             // Optionally ensure medium room placement before sealing
             EnsureMediumRooms();
+            
+            // Ensure small rooms get placed
+            EnsureSmallRooms();
 
-            // Force-run capping regardless of module limit; this closes any visible openings
+            // Place the dedicated spawn room
+            PlaceSpawnRoom();
+
+            // Force-run capping AFTER everything is placed to catch all anchors
             if (sealOpenAnchorsAtEnd && doorCapPrefab != null)
             {
-                SealOpenAnchors();
-                if (ensureAllAnchorsClosed)
-                {
-                    EnsureAllAnchorsClosed();
-                }
+                // Run capping multiple times to ensure ALL anchors get capped
+                ForceCapAllOpenAnchors();
+                
+                // Run one more aggressive pass to catch any missed anchors
+                FinalAggressiveCapping();
+                
+                // Ultra-aggressive final pass - cap EVERYTHING that looks like an anchor
+                UltraAggressiveCapping();
             }
 
-            // Optional player spawn at the end
-            TrySpawnPlayerFarFromMedium();
+            // Player spawning will be handled separately by PlayerSpawner component
+            // Do NOT spawn player during level generation
 
             
 
@@ -291,6 +828,14 @@ public class SimpleLevelGenerator : MonoBehaviour
         else if (startRoomPrefab != null)
         {
             startRoot = Instantiate(startRoomPrefab, Vector3.zero, Quaternion.identity, levelRoot).transform;
+            // Only adjust Y if it's at an extreme position (preserving multi-floor capability)
+            Vector3 pos = startRoot.position;
+            if (Mathf.Abs(pos.y) > 20f)
+            {
+                pos.y = 0f;
+                startRoot.position = pos;
+                Debug.Log("[Gen] Corrected extreme start room Y position");
+            }
         }
         else
         {
@@ -306,7 +851,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Create a simple triangular foundation with three named anchors
         GameObject start = new GameObject("VirtualStart");
         start.transform.SetParent(levelRoot, false);
-        start.transform.position = Vector3.zero;
+        start.transform.position = Vector3.zero; // Virtual start is already at ground level
 
         // Create three anchor points at 0°, 120°, 240°
         CreateAnchor(start.transform, "Anchor_0", 0f);
@@ -567,23 +1112,28 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             GameObject hall = PickBestHall(anchor);
             GameObject conn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart) ?? PickBestConnector(anchor);
-            bool favorSmallMediumRooms = partner == null; // end-cap candidate far from start
+            bool isEndcap = (partner == null);
+            bool favorSmallMediumRooms = !isEndcap; // prefer rooms inline, not at endcaps
             bool gateMediumRooms = loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms;
             GameObject room = PickBestRoomPrefab(anchor, favorSmallMediumRooms, gateMediumRooms);
 
             float roll = (float)rng.NextDouble();
-            if (favorSmallMediumRooms)
+            if (!isEndcap)
             {
-                // Bias rooms to cap ends: Room 50%, Hall 35%, Conn 15%
-                if (roll < 0.5f && room != null) return room;
-                else if (roll < 0.85f && hall != null) return hall;
+                // Enhanced room chance with small room boost
+                float roomChance = 0.5f;
+                if (room != null && IsSmallRoom(room)) roomChance += smallRoomChanceBoost;
+                
+                // Bias rooms (especially small ones): Room 50%+boost%, Hall 35%, Conn 15%
+                if (roll < roomChance && room != null) return room;
+                else if (roll < (roomChance + 0.35f) && hall != null) return hall;
                 else if (conn != null) return conn;
             }
             else
             {
-                if (roll < 0.45f && hall != null) return hall;
-                else if (roll < 0.85f && conn != null) return conn; // boost connectors vs turns
-                else if (room != null) return room;
+                // Endcaps: avoid rooms; prefer hall/connector
+                if (roll < 0.6f && hall != null) return hall;
+                else if (conn != null) return conn;
             }
         }
         else
@@ -864,6 +1414,224 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
     }
 
+    // Ensure at least targetSmallRooms have been placed
+    void EnsureSmallRooms()
+    {
+        // Count current small rooms
+        int placedSmallRooms = 0;
+        foreach (Transform module in placedModules)
+        {
+            if (module)
+            {
+                var meta = module.GetComponent<RoomMeta>();
+                if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.SmallRoom)
+                {
+                    placedSmallRooms++;
+                }
+            }
+        }
+        
+        if (placedSmallRooms >= targetSmallRooms) return;
+        
+        Debug.Log($"[Gen] EnsureSmallRooms: Have {placedSmallRooms}, target {targetSmallRooms}. Placing more...");
+        
+        // Collect small room prefabs
+        var smallPrefabs = new List<GameObject>();
+        for (int i = 0; i < roomPrefabs.Length; i++)
+        {
+            var p = roomPrefabs[i]; if (!p) continue;
+            var meta = p.GetComponent<RoomMeta>();
+            if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.SmallRoom)
+                smallPrefabs.Add(p);
+        }
+        if (smallPrefabs.Count == 0) return;
+        
+        // Find open anchors and try to place small rooms
+        var allAnchors = GatherAllAnchorsInLevel();
+        var openAnchors = new List<Transform>();
+        foreach (var anchor in allAnchors)
+        {
+            if (anchor && IsAnchorOpen(anchor, allAnchors))
+            {
+                openAnchors.Add(anchor);
+            }
+        }
+        
+        int attempts = 0;
+        int maxAttempts = Mathf.Min(20, openAnchors.Count);
+        
+        while (placedSmallRooms < targetSmallRooms && attempts < maxAttempts && openAnchors.Count > 0)
+        {
+            attempts++;
+            
+            // Pick a random open anchor
+            var anchor = openAnchors[UnityEngine.Random.Range(0, openAnchors.Count)];
+            openAnchors.Remove(anchor);
+            
+            // Try to place a small room
+            var smallRoom = smallPrefabs[UnityEngine.Random.Range(0, smallPrefabs.Count)];
+            if (!IsConnectionCompatible(smallRoom, anchor)) continue;
+            
+            var entry = FindEntryAnchorOnPrefab(smallRoom);
+            if (!entry) continue;
+            
+            Transform placed = PlaceModule(smallRoom, entry, anchor, out Transform placedEntryAnchor);
+            if (!placed) continue;
+            
+            placedModules.Add(placed);
+            CollectAnchorsIntoList(placed, availableAnchors);
+            if (placedEntryAnchor) availableAnchors.Remove(placedEntryAnchor);
+            availableAnchors.Remove(anchor);
+            placedSmallRooms++;
+            
+            Debug.Log($"[Gen] Placed small room {smallRoom.name} at {placed.position}. Total small rooms: {placedSmallRooms}");
+        }
+        
+        Debug.Log($"[Gen] EnsureSmallRooms complete: {placedSmallRooms}/{targetSmallRooms} small rooms placed");
+    }
+
+    void PlaceSpawnRoom()
+    {
+        if (spawnRoomPrefab == null)
+        {
+            Debug.LogWarning("[Gen] No spawn room prefab assigned. Player spawning may not work properly.");
+            return;
+        }
+
+        // Find a random open anchor to place the spawn room naturally
+        var allAnchors = GatherAllAnchorsInLevel();
+        var openAnchors = new List<Transform>();
+        
+        foreach (var anchor in allAnchors)
+        {
+            if (anchor && IsAnchorOpen(anchor, allAnchors))
+            {
+                Transform owner = GetModuleRootForAnchor(anchor);
+                // Skip anchors from door caps and prefer anchors from rooms/halls
+                if (owner != null && !owner.name.StartsWith("DoorCap_"))
+                {
+                    openAnchors.Add(anchor);
+                }
+            }
+        }
+
+        if (openAnchors.Count == 0)
+        {
+            Debug.LogWarning("[Gen] No open anchors found for spawn room placement. Placing at origin.");
+            Transform spawnRoom = Instantiate(spawnRoomPrefab, Vector3.zero, Quaternion.identity, levelRoot).transform;
+            spawnRoom.name = "SpawnRoom_Player";
+            placedModules.Add(spawnRoom);
+            return;
+        }
+
+        // Try to place spawn room at a random open anchor
+        int attempts = 0;
+        int maxAttempts = Mathf.Min(10, openAnchors.Count);
+        
+        while (attempts < maxAttempts)
+        {
+            attempts++;
+            
+            // Pick a random open anchor
+            Transform targetAnchor = openAnchors[UnityEngine.Random.Range(0, openAnchors.Count)];
+            openAnchors.Remove(targetAnchor);
+            
+            // Check if spawn room is compatible with this anchor
+            if (!IsConnectionCompatible(spawnRoomPrefab, targetAnchor)) continue;
+            
+            // Find entry anchor on spawn room
+            Transform entryAnchor = FindEntryAnchorOnPrefab(spawnRoomPrefab);
+            if (!entryAnchor) continue;
+            
+            // Try to place the spawn room
+            Transform placedSpawnRoom = PlaceModule(spawnRoomPrefab, entryAnchor, targetAnchor, out Transform placedEntryAnchor);
+            if (!placedSpawnRoom) continue;
+            
+            // Successfully placed!
+            placedSpawnRoom.name = "SpawnRoom_Player";
+            placedModules.Add(placedSpawnRoom);
+            
+            // Remove the used anchor from available anchors
+            if (availableAnchors.Contains(targetAnchor)) availableAnchors.Remove(targetAnchor);
+            if (placedEntryAnchor && availableAnchors.Contains(placedEntryAnchor)) availableAnchors.Remove(placedEntryAnchor);
+            
+            // Mark anchors as connected
+            connectedAnchors.Add(targetAnchor);
+            if (placedEntryAnchor) connectedAnchors.Add(placedEntryAnchor);
+            
+            Debug.Log($"[Gen] Placed spawn room naturally at {placedSpawnRoom.position} connected to {GetModuleRootForAnchor(targetAnchor)?.name}");
+            
+            // Validate spawn room
+            ValidateSpawnRoom(placedSpawnRoom);
+            return;
+        }
+        
+        Debug.LogWarning("[Gen] Failed to place spawn room at any open anchor. Trying fallback placement.");
+        
+        // Fallback: place spawn room away from everything
+        Vector3 fallbackPos = FindEmptySpaceForSpawnRoom();
+        Transform fallbackSpawnRoom = Instantiate(spawnRoomPrefab, fallbackPos, Quaternion.identity, levelRoot).transform;
+        fallbackSpawnRoom.name = "SpawnRoom_Player_Fallback";
+        placedModules.Add(fallbackSpawnRoom);
+        
+        Debug.Log($"[Gen] Placed spawn room at fallback position {fallbackPos}");
+        ValidateSpawnRoom(fallbackSpawnRoom);
+    }
+
+    void ValidateSpawnRoom(Transform spawnRoom)
+    {
+        // Check if spawn room has proper spawn point
+        bool hasSpawnPoint = false;
+        if (spawnRoom.GetComponentInChildren<SpawnPoint>() != null) hasSpawnPoint = true;
+        
+        // Check for PlayerSpawn tagged objects
+        foreach (Transform child in spawnRoom.GetComponentsInChildren<Transform>())
+        {
+            if (child.CompareTag("PlayerSpawn"))
+            {
+                hasSpawnPoint = true;
+                break;
+            }
+        }
+
+        if (!hasSpawnPoint)
+        {
+            Debug.LogWarning("[Gen] Spawn room doesn't contain a SpawnPoint component or 'PlayerSpawn' tagged GameObject. Player spawning may fail!");
+        }
+        else
+        {
+            Debug.Log("[Gen] Spawn room contains proper spawn point. Player spawning should work correctly.");
+        }
+    }
+
+    Vector3 FindEmptySpaceForSpawnRoom()
+    {
+        // Find a position that's not too close to existing modules
+        for (int attempts = 0; attempts < 20; attempts++)
+        {
+            Vector3 testPos = new Vector3(
+                UnityEngine.Random.Range(-100f, 100f),
+                0f,
+                UnityEngine.Random.Range(-100f, 100f)
+            );
+            
+            bool tooClose = false;
+            foreach (Transform module in placedModules)
+            {
+                if (module && Vector3.Distance(testPos, module.position) < minModuleDistance * 2f)
+                {
+                    tooClose = true;
+                    break;
+                }
+            }
+            
+            if (!tooClose) return testPos;
+        }
+        
+        // Ultimate fallback
+        return new Vector3(100f, 0f, 100f);
+    }
+
     void RotateAroundPivot(Transform t, Vector3 pivot, Quaternion delta)
     {
         Vector3 dir = t.position - pivot;
@@ -1114,6 +1882,12 @@ public class SimpleLevelGenerator : MonoBehaviour
         float yaw = Mathf.Repeat(mediumYawIndex, 6) * 60f;
         Vector3 dir = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
         Vector3 pos = SnapToLattice(dir.normalized * (cellSize * Mathf.Max(1, mediumDistanceCells)));
+        // Keep Y-coordinate reasonable for multi-floor rooms, but prevent extreme heights
+        if (Mathf.Abs(pos.y) > 20f) // Only correct if Y is extremely high/low
+        {
+            pos.y = 0f;
+            Debug.Log($"[Gen] Corrected extreme Y position for medium room");
+        }
 
         // Create a temporary target anchor
         var temp = new GameObject("Medium_TargetAnchor").transform;
@@ -1135,6 +1909,46 @@ public class SimpleLevelGenerator : MonoBehaviour
         return placed;
     }
 
+    // Place a large room at a lattice-aligned position offset from origin
+    Transform TryPreplaceLargeRoom()
+    {
+        // Find a large room prefab
+        GameObject large = null;
+        for (int i = 0; i < roomPrefabs.Length; i++)
+        {
+            var p = roomPrefabs[i]; if (!p) continue;
+            var meta = p.GetComponent<RoomMeta>();
+            if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.LargeRoom)
+            { large = p; break; }
+        }
+        if (large == null) return null;
+
+        float yaw = Mathf.Repeat(mediumYawIndex, 6) * 60f;
+        Vector3 dir = Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        Vector3 pos = SnapToLattice(dir.normalized * (cellSize * Mathf.Max(1, mediumDistanceCells)));
+        // Force large room to ground level (Y=0) to prevent underground spawning issues
+        float originalY = pos.y;
+        pos.y = 0f;
+        if (originalY != 0f)
+        {
+            Debug.Log($"[Gen] Large room Y position corrected: {originalY} -> 0 (preventing underground spawn)");
+        }
+        var temp = new GameObject("Large_TargetAnchor").transform;
+        temp.SetParent(levelRoot, false);
+        temp.position = pos;
+        temp.rotation = Quaternion.Euler(0f, yaw, 0f);
+        var entry = FindEntryAnchorOnPrefab(large); if (!entry) { DestroyImmediate(temp.gameObject); return null; }
+        Transform placed = PlaceModule(large, entry, temp, out Transform placedEntryAnchor);
+        DestroyImmediate(temp.gameObject);
+        if (!placed) return null;
+        placedModules.Add(placed);
+        nonStartPlacements++;
+        placementsSinceLastConnector++;
+        CollectAnchorsIntoList(placed, availableAnchors);
+        if (placedEntryAnchor) availableAnchors.Remove(placedEntryAnchor);
+        return placed;
+    }
+
     [Header("Player Spawn (optional)")]
     [SerializeField] bool spawnPlayerOnComplete = false;
     [SerializeField] GameObject playerPrefab;
@@ -1148,23 +1962,60 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] bool useNavMeshForSpawn = true;
     [SerializeField] float navSampleRadius = 4f;
     [SerializeField] int navMeshAreaMask = -1; // NavMesh.AllAreas
+    [Header("Player Spawn (Door Anchor)")]
+    [SerializeField] bool spawnFromDoorAnchors = true;
+    [Tooltip("Meters to move inward from a doorway along -forward to place the player")]
+    [SerializeField] float spawnFromAnchorBack = 2.5f;
+    [Tooltip("If true, require an overhead ceiling to accept a spawn (prevents roof spawns). Disable if levels are open)")]
+    [SerializeField] bool requireOverheadCeiling = true;
 
-    void TrySpawnPlayerFarFromMedium()
+    void TrySpawnPlayerFarFromHub()
     {
         if (!spawnPlayerOnComplete || playerPrefab == null) return;
-        Vector3 mediumPos = lastMediumRoot != null ? lastMediumRoot.position : Vector3.zero;
+        Vector3 hubPos = (lastLargeRoot != null ? lastLargeRoot.position : (lastMediumRoot != null ? lastMediumRoot.position : Vector3.zero));
         float minSqr = minPlayerSpawnDistanceFromMedium * minPlayerSpawnDistanceFromMedium;
 
-        // Build candidate anchor-based positions inside halls/rooms away from medium
+        // Build reachable module set from hub so we never pick isolated islands
+        Transform hubRoot = (lastLargeRoot != null ? lastLargeRoot : lastMediumRoot);
+        var reachableOwners = BuildReachableOwners(hubRoot);
+
+        // Prefer door-anchor-based spawn inside geometry
+        if (spawnFromDoorAnchors)
+        {
+            var anchorsAll = GatherAllAnchorsInLevel();
+            int triesA = 0;
+            while (triesA < playerSpawnTryLimit && anchorsAll.Count > 0)
+            {
+                triesA++;
+                var a = anchorsAll[UnityEngine.Random.Range(0, anchorsAll.Count)];
+                if (!a) continue;
+                var owner = GetModuleRootForAnchor(a);
+                if (!owner || owner.name.StartsWith("DoorCap_")) continue;
+                if (reachableOwners != null && !reachableOwners.Contains(owner)) continue;
+                var metaOwn = owner.GetComponent<RoomMeta>();
+                if (metaOwn == null) continue;
+                if (!(metaOwn.category == RoomCategory.Room || metaOwn.category == RoomCategory.Hallway)) continue;
+                // Avoid hub proximity
+                if ((owner.position - hubPos).sqrMagnitude < minSqr) continue;
+                // Move inward from the doorway along -forward
+                Vector3 baseCandidate = a.position - a.forward * Mathf.Max(0.1f, spawnFromAnchorBack);
+                baseCandidate += Vector3.up * (spawnGroundClearance + Mathf.Max(0f, spawnVerticalLift));
+                // Do NOT allow generation here – only test ground
+                if (TrySpawnAtCandidate(baseCandidate)) return;
+            }
+        }
+
+        // Build candidate anchor-based positions inside halls/rooms away from hub and reachable
         var moduleCandidates = new List<Transform>();
         for (int i = 0; i < placedModules.Count; i++)
         {
             var t = placedModules[i]; if (!t) continue;
             if (t.name.StartsWith("DoorCap_")) continue;
+            if (reachableOwners != null && !reachableOwners.Contains(t)) continue;
             var meta = t.GetComponent<RoomMeta>(); if (meta == null) continue;
             if (meta.category == RoomCategory.Hallway || meta.category == RoomCategory.Room)
             {
-                if ((t.position - mediumPos).sqrMagnitude >= minSqr) moduleCandidates.Add(t);
+                if ((t.position - hubPos).sqrMagnitude >= minSqr) moduleCandidates.Add(t);
             }
         }
         if (moduleCandidates.Count == 0) moduleCandidates.AddRange(placedModules);
@@ -1215,8 +2066,11 @@ public class SimpleLevelGenerator : MonoBehaviour
             return false;
         if (Vector3.Dot(ground.normal, Vector3.up) < 0.6f) return false;
         // Require overhead ceiling within ~3.5m to avoid spawning on roofs
-        if (!Physics.Raycast(candidate + Vector3.up * 0.1f, Vector3.up, 3.5f, spawnGroundMask, QueryTriggerInteraction.Ignore))
-            return false;
+        if (requireOverheadCeiling)
+        {
+            if (!Physics.Raycast(candidate + Vector3.up * 0.1f, Vector3.up, 3.5f, spawnGroundMask, QueryTriggerInteraction.Ignore))
+                return false;
+        }
         // Small capsule overlap test for a typical controller
         float radius = 0.3f; float height = 1.8f;
         Vector3 p1 = candidate + Vector3.up * 0.1f;
@@ -1225,6 +2079,63 @@ public class SimpleLevelGenerator : MonoBehaviour
             return false;
         SpawnPlayerGrounded(candidate);
         return true;
+    }
+
+    // Build connectivity graph between modules via anchors and return set of modules reachable from hubRoot
+    HashSet<Transform> BuildReachableOwners(Transform hubRoot)
+    {
+        if (!hubRoot) return null;
+        // Map owner -> anchors
+        var ownerToAnchors = new Dictionary<Transform, List<Transform>>();
+        for (int i = 0; i < placedModules.Count; i++)
+        {
+            var owner = placedModules[i]; if (!owner) continue;
+            if (owner.name.StartsWith("DoorCap_")) continue;
+            var list = new List<Transform>();
+            CollectAnchorsIntoList(owner, list);
+            ownerToAnchors[owner] = list;
+        }
+        // Build adjacency
+        var neighbors = new Dictionary<Transform, List<Transform>>();
+        var owners = new List<Transform>(ownerToAnchors.Keys);
+        for (int i = 0; i < owners.Count; i++)
+        {
+            var oi = owners[i]; var ai = ownerToAnchors[oi];
+            if (!neighbors.ContainsKey(oi)) neighbors[oi] = new List<Transform>();
+            for (int j = 0; j < owners.Count; j++)
+            {
+                if (i == j) continue; var oj = owners[j]; var aj = ownerToAnchors[oj];
+                // If any anchor pair could connect, link owners
+                bool linked = false;
+                for (int ia = 0; ia < ai.Count && !linked; ia++)
+                {
+                    var a = ai[ia]; if (!a) continue;
+                    for (int ja = 0; ja < aj.Count && !linked; ja++)
+                    {
+                        var b = aj[ja]; if (!b) continue;
+                        if (AnchorsCouldConnectForCapping(a, b)) { linked = true; break; }
+                    }
+                }
+                if (linked) neighbors[oi].Add(oj);
+            }
+        }
+        // BFS from hubRoot owner
+        var reachable = new HashSet<Transform>();
+        var q = new Queue<Transform>();
+        var startOwner = GetModuleRootForAnchor(hubRoot) ?? hubRoot;
+        if (!neighbors.ContainsKey(startOwner)) return reachable;
+        q.Enqueue(startOwner); reachable.Add(startOwner);
+        while (q.Count > 0)
+        {
+            var cur = q.Dequeue();
+            if (!neighbors.TryGetValue(cur, out var neigh)) continue;
+            for (int k = 0; k < neigh.Count; k++)
+            {
+                var n = neigh[k]; if (!n || reachable.Contains(n)) continue;
+                reachable.Add(n); q.Enqueue(n);
+            }
+        }
+        return reachable;
     }
 
     void SpawnPlayerGrounded(Vector3 startPos)
@@ -1310,10 +2221,45 @@ public class SimpleLevelGenerator : MonoBehaviour
         float dist = Vector3.Distance(aXZ, bXZ);
         if (dist > connectionDistance) return false;
 
+        // Large room spacing check - prevent halls from getting too close to large rooms
+        Transform ownerA = GetModuleRootForAnchor(a);
+        Transform ownerB = GetModuleRootForAnchor(b);
+        
+        bool aIsLargeRoom = IsLargeRoom(ownerA);
+        bool bIsLargeRoom = IsLargeRoom(ownerB);
+        bool aIsHall = IsHallway(ownerA);
+        bool bIsHall = IsHallway(ownerB);
+        
+        // If connecting a hall to a large room, ensure minimum spacing
+        if ((aIsLargeRoom && bIsHall) || (bIsLargeRoom && aIsHall))
+        {
+            float minSpacing = connectionDistance * 0.9f; // Require closer connection for large room-hall pairs
+            if (dist < minSpacing)
+            {
+                Debug.Log($"[Gen] Rejecting hall-large room connection: distance {dist:F2} < min spacing {minSpacing:F2}");
+                return false;
+            }
+        }
+
         // Facing check: forward vectors should be roughly opposite
         float facingDot = Vector3.Dot(a.forward, -b.forward);
         if (facingDot < connectionFacingDotThreshold) return false;
         return true;
+    }
+    
+    bool IsLargeRoom(Transform module)
+    {
+        if (!module) return false;
+        RoomMeta meta = module.GetComponent<RoomMeta>();
+        return meta != null && meta.category == RoomCategory.Room && 
+               (module.name.ToLower().Contains("large") || module.name.ToLower().Contains("big"));
+    }
+    
+    bool IsHallway(Transform module)
+    {
+        if (!module) return false;
+        RoomMeta meta = module.GetComponent<RoomMeta>();
+        return meta != null && meta.category == RoomCategory.Hallway;
     }
 
     // More permissive version used during capping to decide if an anchor is already paired
@@ -1538,6 +2484,124 @@ public class SimpleLevelGenerator : MonoBehaviour
         return GetModuleRootForAnchor(a) != GetModuleRootForAnchor(b);
     }
 
+    bool IsSmallRoom(GameObject prefab)
+    {
+        if (!prefab) return false;
+        var meta = prefab.GetComponent<RoomMeta>();
+        return meta != null && meta.subtype == PlacementCatalog.HallSubtype.SmallRoom;
+    }
+
+    void ForceCapAllOpenAnchors()
+    {
+        if (doorCapPrefab == null)
+        {
+            Debug.LogWarning("[Gen] Cannot cap anchors: doorCapPrefab is null!");
+            return;
+        }
+
+        int startingModuleCount = placedModules.Count;
+        Debug.Log($"[Gen] Starting door capping process. Current modules: {startingModuleCount}, Module limit was: {maxModules}");
+        Debug.Log("[Gen] Door capping IGNORES module limits - will place as many caps as needed!");
+
+        int maxPasses = 5;
+        int totalCapsPlaced = 0;
+        
+        for (int pass = 0; pass < maxPasses; pass++)
+        {
+            var allAnchors = GatherAllAnchorsInLevel();
+            var uncappedAnchors = new List<Transform>();
+            
+            // Find all truly open anchors with enhanced detection
+            for (int i = 0; i < allAnchors.Count; i++)
+            {
+                var a = allAnchors[i];
+                if (!a) continue;
+                Transform owner = GetModuleRootForAnchor(a);
+                if (owner != null && owner.name.StartsWith("DoorCap_")) continue; // skip caps
+                
+                bool isOpen = IsAnchorOpen(a, allAnchors);
+                bool isConnected = connectedAnchors.Contains(a);
+                bool hasPartner = FindPartnerAnchor(a) != null;
+                
+                if (isOpen)
+                {
+                    uncappedAnchors.Add(a);
+                    Debug.Log($"[Gen] Found uncapped anchor: {a.name} at {a.position} (owner: {(owner ? owner.name : "null")}, connected: {isConnected}, hasPartner: {hasPartner})");
+                }
+                else if (showDebugInfo)
+                {
+                    Debug.Log($"[Gen] Skipping anchor {a.name}: connected={isConnected}, hasPartner={hasPartner}");
+                }
+            }
+            
+            if (uncappedAnchors.Count == 0)
+            {
+                Debug.Log($"[Gen] All anchors capped after {pass + 1} passes. Total caps placed: {totalCapsPlaced}");
+                break;
+            }
+            
+            Debug.Log($"[Gen] Pass {pass + 1}: Found {uncappedAnchors.Count} uncapped anchors, placing caps...");
+            
+            // Cap all uncapped anchors in this pass
+            foreach (var anchor in uncappedAnchors)
+            {
+                if (!anchor) continue; // Safety check
+                
+                Transform owner = GetModuleRootForAnchor(anchor);
+                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
+
+                // Choose best prefab in priority: room-specific -> hallway-specific -> generic
+                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
+                                    : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
+                if (prefab == null) prefab = doorCapPrefab;
+
+                if (prefab == null)
+                {
+                    Debug.LogError($"[Gen] Cannot cap anchor {anchor.name} - no door cap prefab available!");
+                    continue;
+                }
+
+                // Place using anchor alignment so the cap's entry DoorAnchor snaps to the target anchor
+                PlaceCapAtAnchor(prefab, anchor, owner != null ? owner : levelRoot);
+                Debug.Log($"[Gen] Placed cap on anchor {anchor.name} at {anchor.position}");
+                totalCapsPlaced++;
+                
+                // Mark this anchor as connected to prevent future attempts
+                connectedAnchors.Add(anchor);
+            }
+        }
+        
+        // Final check
+        var finalAnchors = GatherAllAnchorsInLevel();
+        int remainingOpen = 0;
+        foreach (var a in finalAnchors)
+        {
+            if (!a) continue;
+            Transform owner = GetModuleRootForAnchor(a);
+            if (owner != null && owner.name.StartsWith("DoorCap_")) continue;
+            if (IsAnchorOpen(a, finalAnchors)) remainingOpen++;
+        }
+        
+        int finalModuleCount = placedModules.Count;
+        int capsPlacedBeyondLimit = Mathf.Max(0, finalModuleCount - maxModules);
+        
+        if (remainingOpen > 0)
+        {
+            Debug.LogWarning($"[Gen] Warning: {remainingOpen} anchors still uncapped after {maxPasses} passes!");
+        }
+        else
+        {
+            Debug.Log($"[Gen] Success: All anchors properly capped! Total caps placed: {totalCapsPlaced}");
+        }
+        
+        Debug.Log($"[Gen] Final module count: {finalModuleCount} (original limit: {maxModules})");
+        if (capsPlacedBeyondLimit > 0)
+        {
+            Debug.Log($"[Gen] Placed {capsPlacedBeyondLimit} door caps BEYOND the original module limit to ensure complete level!");
+        }
+    }
+
     void SealOpenAnchors()
     {
         if (doorCapPrefab == null) return;
@@ -1566,7 +2630,92 @@ public class SimpleLevelGenerator : MonoBehaviour
 
     bool IsAnchorOpen(Transform a, List<Transform> anchors)
     {
-        return !connectedAnchors.Contains(a);
+        if (!a) return false; // Invalid anchor is not "open"
+        
+        // First check if anchor is explicitly marked as connected
+        if (connectedAnchors.Contains(a))
+        {
+            Debug.Log($"[Gen] Anchor {a.name} marked as connected in connectedAnchors - not capping");
+            return false;
+        }
+        
+        // Get anchor owner once for all checks
+        Transform anchorOwner = GetModuleRootForAnchor(a);
+        
+        // Check if this anchor already has a door cap placed on it
+        if (anchorOwner != null && anchorOwner.name.StartsWith("DoorCap_")) return false;
+        
+        // Check if there's a door cap as a child of this anchor
+        foreach (Transform child in a)
+        {
+            if (child.name.StartsWith("DoorCap_")) return false;
+        }
+        
+        // More aggressive partner checking - only skip if partner is VERY close
+        Transform partner = FindPartnerAnchor(a);
+        if (partner != null)
+        {
+            // Check if partner is on the same floor
+            float yDifference = Mathf.Abs(a.position.y - partner.position.y);
+            if (yDifference > 2f) // Different floors - don't consider as partners
+            {
+                Debug.Log($"[Gen] Partner {partner.name} is on different floor (Y diff: {yDifference:F2}) - not considering as connected");
+            }
+            else
+            {
+                float distance = Vector3.Distance(a.position, partner.position);
+                
+                // Check if this anchor belongs to a large room - be more lenient for large rooms
+                RoomMeta anchorMeta = anchorOwner ? anchorOwner.GetComponent<RoomMeta>() : null;
+                bool isLargeRoom = anchorMeta != null && anchorMeta.category == RoomCategory.Room && 
+                                  (anchorOwner.name.ToLower().Contains("large") || anchorOwner.name.ToLower().Contains("big"));
+                
+                float threshold = isLargeRoom ? connectionDistance * 1.5f : connectionDistance * 0.8f; // Even more lenient for large rooms
+                
+                // Only consider "connected" if partner is close enough
+                if (distance < threshold && AnchorsCouldConnectForCapping(a, partner))
+                {
+                    Debug.Log($"[Gen] Anchor {a.name} on {(anchorOwner ? anchorOwner.name : "unknown")} has partner {partner.name} at distance {distance:F2} (threshold: {threshold:F2}, isLargeRoom: {isLargeRoom}, same floor)");
+                    return false; // Treat as "connected"
+                }
+            }
+        }
+        
+        // CRITICAL: Check if there's an actual hallway module very close to this anchor
+        // This catches cases where connectedAnchors tracking failed
+        foreach (Transform module in placedModules)
+        {
+            if (!module || module == anchorOwner) continue;
+            
+            RoomMeta moduleMeta = module.GetComponent<RoomMeta>();
+            if (moduleMeta == null || moduleMeta.category != RoomCategory.Hallway) continue;
+            
+            // Check if this hallway module has any anchors very close to our anchor
+            var moduleAnchors = new List<Transform>();
+            CollectAnchorsIntoList(module, moduleAnchors);
+            
+            foreach (Transform hallAnchor in moduleAnchors)
+            {
+                if (!hallAnchor) continue;
+                
+                // Check Y-difference to ensure we're comparing anchors on the same floor
+                float yDifference = Mathf.Abs(a.position.y - hallAnchor.position.y);
+                if (yDifference > 2f) // Skip if anchors are on different floors
+                {
+                    Debug.Log($"[Gen] Skipping {hallAnchor.name} - different floor (Y diff: {yDifference:F2})");
+                    continue;
+                }
+                
+                float hallDistance = Vector3.Distance(a.position, hallAnchor.position);
+                if (hallDistance < connectionDistance * 1.5f) // Be generous for detection
+                {
+                    Debug.Log($"[Gen] Anchor {a.name} has nearby hallway {module.name} anchor {hallAnchor.name} at distance {hallDistance:F2} (same floor) - treating as connected");
+                    return false; // Don't cap - there's a hallway here
+                }
+            }
+        }
+        
+        return true; // Anchor is open and should be capped
     }
 
     void PlaceCapAtAnchor(GameObject capPrefab, Transform targetAnchor, Transform parent)
@@ -1587,6 +2736,10 @@ public class SimpleLevelGenerator : MonoBehaviour
             inst.transform.position = desired - delta;
         }
         connectedAnchors.Add(targetAnchor);
+        
+        // IMPORTANT: Add the door cap to placedModules list but DON'T count it against module limits
+        // Door caps are essential for completing the level and should never be limited
+        placedModules.Add(inst.transform);
     }
 
     Transform GetBestCapEntryAnchor(Transform capRoot, Transform targetAnchor)

@@ -1414,7 +1414,7 @@ MonoBehaviour:
   isAdapter: 1
   subtype: 8
   anchorCount: 3
-  catalogWeight: 15
+  catalogWeight: 10
   depthGate: 1
   maxPerMap: 999
   isLandmark: 0

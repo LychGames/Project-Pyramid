@@ -299,27 +299,27 @@ MonoBehaviour:
   mouseSensitivity: 50
   minPitch: -85
   maxPitch: 85
-  mouseSmoothTime: 0.03
+  mouseSmoothTime: 0
   maxMouseStep: 6
-  walkSpeed: 4
-  sprintSpeed: 6.5
+  walkSpeed: 3.5
+  sprintSpeed: 7
   sprintKey: 304
   airControlUp: 0.35
-  airControlDown: 0.6
-  airSpeedFallMultiplier: 1.1
+  airControlDown: 0.7
+  airSpeedFallMultiplier: 1.15
   jumpLaunchForwardBoost: 1.4
   jumpLaunchDecay: 6
   coyoteTime: 0.02
   jumpBuffer: 0.1
-  jumpCooldownSeconds: 0.5
+  jumpCooldownSeconds: 0.35
   gravity: -24
   fallMultiplier: 4
-  lowJumpMultiplier: 4.2
+  lowJumpMultiplier: 6
   maxFallSpeed: -120
   headRatio: 0.125
-  tapHeads: 6.5
-  holdExtraHeads: 0.25
-  maxHeadsCap: 7
+  tapHeads: 5
+  holdExtraHeads: 0
+  maxHeadsCap: 5.3
   tapGuaranteeFraction: 0.95
   jumpBlendTime: 0.14
   jumpBlendCurve:
@@ -351,15 +351,15 @@ MonoBehaviour:
   minAscendTime: 0.18
   apexHangTime: 0.26
   hangGravityMultiplier: 0.55
-  dramaticTapChance: 0
+  dramaticTapChance: 0.08
   dramaticBonusHeads: 0.2
   dramaticCooldown: 6
   headroomMargin: 0.12
   jumpImmediateKickFraction: 0.75
-  jumpForwardExtra: 2
-  inheritPlanarFactor: 0.5
-  jumpForwardDecay: 3.5
-  inheritPlanarDecay: 1.2
+  jumpForwardExtra: 2.5
+  inheritPlanarFactor: 0.7
+  jumpForwardDecay: 4.2
+  inheritPlanarDecay: 1
   jumpInputDeadZone: 0.15
   holdAscendGravityScale: 0.65
   holdSustainTime: 0.8
@@ -371,13 +371,13 @@ MonoBehaviour:
   cameraHeight: 1.8
   skinWidth: 0.06
   enableHeadBob: 1
-  bobFreq: 9.5
-  bobAmp: 0.07
+  bobFreq: 8
+  bobAmp: 0.13
   bobStartSmooth: 0.06
   bobRunFreqMultiplier: 1.25
-  backBobAmpMultiplier: 0.7
+  backBobAmpMultiplier: 0.3
   enableWallSlide: 1
-  wallCheckDistance: 0.5
+  wallCheckDistance: 0.4
   wallMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -387,7 +387,7 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  useFallCurve: 1
+  useFallCurve: 0
   fallStartScale: 0.3
   fallMidT: 0.5
   fallMidScale: 0.65

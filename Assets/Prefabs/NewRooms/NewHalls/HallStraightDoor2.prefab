@@ -692,10 +692,10 @@ MonoBehaviour:
   hallWidth: 5
   sizeClass: 0
   themeTags: []
-  isAdapter: 1
+  isAdapter: 0
   subtype: 0
   anchorCount: 4
-  catalogWeight: 10
+  catalogWeight: 1
   depthGate: 0
   maxPerMap: 999
   isLandmark: 0

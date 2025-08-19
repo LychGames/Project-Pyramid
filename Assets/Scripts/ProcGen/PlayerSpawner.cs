@@ -9,13 +9,147 @@ public class PlayerSpawner : MonoBehaviour
     public Transform fallbackSpawn;
 
     [Header("Grounding")]
+    [Tooltip("Layer mask for ground detection. Should include 'levelgeo' layer at minimum")]
     public LayerMask groundMask = ~0;   // Everything by default
     [Tooltip("Spawn this far above the spawn point, then drop to ground.")]
     public float dropHeight = 2f;
     [Tooltip("Tiny lift after grounding so feet never clip.")]
     public float extraClearance = 0.03f;
+    [Tooltip("Maximum distance to raycast for ground detection")]
+    public float maxGroundDistance = 15f; // Increased to handle multi-floor rooms
 
     private GameObject playerInstance;
+
+    void Awake()
+    {
+        // Sync grounding layer mask with main ground mask to avoid conflicts
+        grounding.groundMask = groundMask;
+        
+        // Auto-set to LevelGeo layer if available and ground mask is default
+        if (groundMask == (1 << 0)) // Default layer only
+        {
+            SetGroundMaskToLevelGeo();
+        }
+    }
+
+    [ContextMenu("Set Ground Mask to LevelGeo Layer")]
+    void SetGroundMaskToLevelGeo()
+    {
+        // Try different case variations of LevelGeo
+        string[] possibleNames = { "LevelGeo", "levelgeo", "levelGeo", "Levelgeo", "LEVELGEO" };
+        
+        int levelGeoLayer = -1;
+        string foundName = "";
+        
+        foreach (string name in possibleNames)
+        {
+            levelGeoLayer = LayerMask.NameToLayer(name);
+            if (levelGeoLayer >= 0)
+            {
+                foundName = name;
+                break;
+            }
+        }
+        
+        if (levelGeoLayer >= 0)
+        {
+            groundMask = 1 << levelGeoLayer;
+            grounding.groundMask = groundMask;
+            Debug.Log($"PlayerSpawner: Set ground mask to '{foundName}' layer ({levelGeoLayer}). Mask value: {groundMask}");
+        }
+        else
+        {
+            Debug.LogWarning("PlayerSpawner: No LevelGeo layer found! Tried: " + string.Join(", ", possibleNames) + ". Check your layer settings.");
+            
+            // Show all available layers for debugging
+            Debug.Log("PlayerSpawner: Available layers:");
+            for (int i = 0; i < 32; i++)
+            {
+                string layerName = LayerMask.LayerToName(i);
+                if (!string.IsNullOrEmpty(layerName))
+                {
+                    Debug.Log($"  Layer {i}: {layerName}");
+                }
+            }
+        }
+    }
+
+    [ContextMenu("Set Ground Mask to Everything")]
+    void SetGroundMaskToEverything()
+    {
+        groundMask = ~0; // Everything
+        grounding.groundMask = groundMask;
+        Debug.Log($"PlayerSpawner: Set ground mask to EVERYTHING. Mask value: {groundMask}");
+    }
+
+    [ContextMenu("Test Ground Detection")]
+    void TestGroundDetection()
+    {
+        // Find spawn point and test raycast from there
+        Transform spawn = FindSpawnPoint();
+        if (spawn == null)
+        {
+            Debug.LogError("PlayerSpawner: No spawn point found for testing!");
+            return;
+        }
+
+        Debug.Log($"PlayerSpawner: Found spawn point '{spawn.name}' at {spawn.position}");
+        Debug.Log($"PlayerSpawner: Current ground mask: {groundMask} (layer names: {GetLayerNames(groundMask)})");
+        Debug.Log($"PlayerSpawner: Max ground distance: {maxGroundDistance}");
+
+        // Test from multiple heights
+        Vector3[] testOrigins = {
+            spawn.position + Vector3.up * 10f,
+            spawn.position + Vector3.up * 5f,
+            spawn.position + Vector3.up * 2f,
+            spawn.position
+        };
+
+        foreach (Vector3 testOrigin in testOrigins)
+        {
+            Debug.Log($"PlayerSpawner: Testing from {testOrigin} (height: +{testOrigin.y - spawn.position.y:F1})");
+
+            // Test with current mask
+            if (Physics.Raycast(testOrigin, Vector3.down, out RaycastHit hit, maxGroundDistance + 10f, groundMask, QueryTriggerInteraction.Ignore))
+            {
+                Debug.Log($"PlayerSpawner: ✓ Found ground with current mask at {hit.point}, object: {hit.collider.name}, layer: {LayerMask.LayerToName(hit.collider.gameObject.layer)}, distance: {hit.distance:F2}");
+                return; // Success, stop testing
+            }
+            
+            // Test with everything mask
+            if (Physics.Raycast(testOrigin, Vector3.down, out RaycastHit backupHit, maxGroundDistance + 10f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                Debug.LogWarning($"PlayerSpawner: ! Found ground with 'everything' mask at {backupHit.point}, object: {backupHit.collider.name}, layer: {LayerMask.LayerToName(backupHit.collider.gameObject.layer)}, distance: {backupHit.distance:F2}");
+            }
+        }
+        
+        Debug.LogError("PlayerSpawner: NO GROUND FOUND from any test height!");
+        
+        // Additional debug: Show all colliders near spawn point
+        Collider[] nearbyColliders = Physics.OverlapSphere(spawn.position, 10f);
+        Debug.Log($"PlayerSpawner: Found {nearbyColliders.Length} colliders within 10m of spawn:");
+        foreach (Collider col in nearbyColliders)
+        {
+            Debug.Log($"  - {col.name} (layer: {LayerMask.LayerToName(col.gameObject.layer)}, bounds: {col.bounds})");
+        }
+    }
+
+    string GetLayerNames(LayerMask mask)
+    {
+        if (mask == ~0) return "Everything";
+        
+        var names = new System.Collections.Generic.List<string>();
+        for (int i = 0; i < 32; i++)
+        {
+            if ((mask & (1 << i)) != 0)
+            {
+                string layerName = LayerMask.LayerToName(i);
+                if (!string.IsNullOrEmpty(layerName))
+                    names.Add($"{layerName}({i})");
+            }
+        }
+        return names.Count > 0 ? string.Join(", ", names) : "None";
+    }
 
     void Start()
     {
@@ -30,29 +164,22 @@ public class PlayerSpawner : MonoBehaviour
 
     Transform FindSpawnPoint()
     {
-        // 1) Try the tag, but don�t crash if it doesn�t exist.
-        try
-        {
-            GameObject tagged = GameObject.FindGameObjectWithTag("PlayerSpawn");
-            if (tagged) return tagged.transform;
-            GameObject taggedAlt = GameObject.FindGameObjectWithTag("Playerspawn");
-            if (taggedAlt) return taggedAlt.transform;
-        }
-        catch (UnityException)
-        {
-            // Tag not defined � ignore and fall through to other options.
-            Debug.LogWarning("PlayerSpawner: Tag 'PlayerSpawn' is not defined. Using fallback(s).");
-        }
-
-        // 2) Try a SpawnPoint component in the scene.
+        // Look for SpawnPoint component in the scene - simple and reliable
         var sp = FindFirstObjectByType<SpawnPoint>();
-        if (sp) return sp.transform;
+        if (sp) 
+        {
+            Debug.Log($"PlayerSpawner: Found SpawnPoint component on {sp.name}");
+            return sp.transform;
+        }
 
         // 3) Use explicit fallback if provided.
         if (fallbackSpawn) return fallbackSpawn;
 
+        Debug.LogError("PlayerSpawner: No SpawnPoint component found! Add a SpawnPoint component to your spawn room GameObject.");
         return null;
     }
+
+
 
 
     void SpawnAndGround(Vector3 basePos, Quaternion rot)
@@ -206,21 +333,58 @@ public class PlayerSpawner : MonoBehaviour
         Vector3 rayOrigin = worldTop + Vector3.up * 2f; // start a bit above the head
         float rayDistance = (worldTop - worldBottom).magnitude + 6f; // capsule height + some slack
 
+        // Try multiple approaches to find ground
+        bool foundGround = false;
+        Vector3 finalPosition = player.transform.position;
+        
+        // Approach 1: Try with grounding mask
         if (Physics.Raycast(rayOrigin, Vector3.down, out RaycastHit hit, rayDistance, grounding.groundMask, QueryTriggerInteraction.Ignore))
         {
-            // We want the capsule bottom to sit at floor + clearance
             Vector3 desiredBottom = hit.point + Vector3.up * (radius + grounding.extraClearance);
-
-            // Compute how far to move the whole player so bottom goes to desiredBottom
             Vector3 offset = desiredBottom - worldBottom;
-
-            player.transform.position += offset;
+            finalPosition = player.transform.position + offset;
+            foundGround = true;
+            Debug.Log($"PlayerSpawner: Found ground with grounding mask at {hit.point}, object: {hit.collider.name}, layer: {LayerMask.LayerToName(hit.collider.gameObject.layer)}");
+        }
+        // Approach 2: Try with everything mask as backup
+        else if (Physics.Raycast(rayOrigin, Vector3.down, out RaycastHit backupHit, rayDistance, ~0, QueryTriggerInteraction.Ignore))
+        {
+            Vector3 desiredBottom = backupHit.point + Vector3.up * (radius + grounding.extraClearance);
+            Vector3 offset = desiredBottom - worldBottom;
+            finalPosition = player.transform.position + offset;
+            foundGround = true;
+            Debug.LogWarning($"PlayerSpawner: Found ground with 'everything' mask at {backupHit.point}, object: {backupHit.collider.name}, layer: {LayerMask.LayerToName(backupHit.collider.gameObject.layer)}. Your ground mask ({grounding.groundMask}) might need updating!");
+        }
+        // Approach 3: Try shorter distance raycast
+        else if (Physics.Raycast(rayOrigin, Vector3.down, out RaycastHit shortHit, 3f, ~0, QueryTriggerInteraction.Ignore))
+        {
+            Vector3 desiredBottom = shortHit.point + Vector3.up * (radius + grounding.extraClearance);
+            Vector3 offset = desiredBottom - worldBottom;
+            finalPosition = player.transform.position + offset;
+            foundGround = true;
+            Debug.LogWarning($"PlayerSpawner: Found ground with short raycast at {shortHit.point}, object: {shortHit.collider.name}");
+        }
+        // Approach 4: Try upward raycast in case player is underground
+        else if (Physics.Raycast(rayOrigin, Vector3.up, out RaycastHit upHit, rayDistance, ~0, QueryTriggerInteraction.Ignore))
+        {
+            Vector3 desiredBottom = upHit.point + Vector3.up * (radius + grounding.extraClearance + 0.5f);
+            Vector3 offset = desiredBottom - worldBottom;
+            finalPosition = player.transform.position + offset;
+            foundGround = true;
+            Debug.LogWarning($"PlayerSpawner: Found ground ABOVE with upward raycast at {upHit.point}, object: {upHit.collider.name} - level might be underground!");
+        }
+        
+        if (foundGround)
+        {
+            // Place player well above ground to prevent falling through
+            player.transform.position = finalPosition + Vector3.up * 2.0f; // 2m above ground should be safe
+            Debug.Log($"PlayerSpawner: Placed player 2m above detected ground at {finalPosition + Vector3.up * 2.0f}");
         }
         else
         {
-            // Fallback: if no floor seen, don't move them; optional small nudge up
-            player.transform.position += Vector3.up * grounding.dropHeight;
-            Debug.LogWarning("PlayerSpawner: Ground ray found no floor under spawn. Check colliders/mask.");
+            // Ultimate fallback: place high above spawn point
+            player.transform.position = player.transform.position + Vector3.up * 5.0f; // Very high fallback
+            Debug.LogWarning($"PlayerSpawner: NO GROUND FOUND! Placed player 5m above spawn point. Player will fall down.");
         }
 
         if (cc) cc.enabled = hadCC;
