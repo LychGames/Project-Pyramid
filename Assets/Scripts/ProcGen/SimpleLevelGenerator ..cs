@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public class SimpleLevelGenerator : MonoBehaviour
 {
@@ -20,6 +21,8 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Header("Start Room")]
     [SerializeField] GameObject startRoomPrefab;  // Your 10m equilateral triangle
     [SerializeField] bool startIsVirtual = false;
+    [Tooltip("If true, do not place a start room; begin from a pre-placed medium room instead.")]
+    [SerializeField] bool startFromMediumRoom = true;
 
     [Header("Prefab Lists")]
     [SerializeField] GameObject[] hallwayPrefabs;     // NewHall, HallLeft15, HallRight15, HallLeft30, HallRight30
@@ -97,7 +100,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Tooltip("How many initial branches to grow from the medium room immediately after placement")] 
     [SerializeField] int initialBranchesFromMedium = 3;
     [Tooltip("How many steps to grow from each chosen medium-room anchor before free growth")] 
-    [SerializeField] int initialStepsPerMediumBranch = 2;
+    [SerializeField] int initialStepsPerMediumBranch = 6;
 
     [Header("Placement Policy")]
     [SerializeField] bool disallowConsecutiveConnectors = true;
@@ -131,6 +134,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] private int minHallsBeforeBranch = 3; // required halls per branch before allowing branching
     [SerializeField] private int minLoopConnectorsBeforeMediumRooms = 2; // gate medium rooms until some loops are formed
     private int loopConnectorsPlaced = 0;
+    private Transform lastMediumRoot = null;
 
     // Replication hook: subscribers (e.g., networking) can listen for placements
     public event System.Action<GameObject, Vector3, Quaternion, Transform> ModulePlaced;
@@ -184,26 +188,28 @@ public class SimpleLevelGenerator : MonoBehaviour
 
             ClearLevel();
 
-            // Place start room
-            Transform startRoot = PlaceStartRoom();
-            if (startRoot == null)
+            if (!startFromMediumRoom)
             {
-                Debug.LogError("[Gen] Failed to place start room!");
-                return;
-            }
-
-            // Collect initial anchors
-            CollectAnchorsIntoList(startRoot, availableAnchors);
-            AssignInitialBranches(startRoot);
-            if (limitStartAnchorsToOne && availableAnchors.Count > 1)
-            {
-                Transform best = ChooseForwardMostAnchor(availableAnchors);
-                availableAnchors.Clear();
-                if (best) availableAnchors.Add(best);
+                // Place start room
+                Transform startRoot = PlaceStartRoom();
+                if (startRoot == null)
+                {
+                    Debug.LogError("[Gen] Failed to place start room!");
+                    return;
+                }
+                // Collect initial anchors
+                CollectAnchorsIntoList(startRoot, availableAnchors);
+                AssignInitialBranches(startRoot);
+                if (limitStartAnchorsToOne && availableAnchors.Count > 1)
+                {
+                    Transform best = ChooseForwardMostAnchor(availableAnchors);
+                    availableAnchors.Clear();
+                    if (best) availableAnchors.Add(best);
+                }
             }
 
             // Generate the level
-            if (forceInitialGrowthFromAllStartAnchors)
+            if (!startFromMediumRoom && forceInitialGrowthFromAllStartAnchors)
             {
                 var startAnchors = new List<Transform>(availableAnchors);
                 GrowFromInitialAnchors(startAnchors, Mathf.Max(1, initialStepsPerStart));
@@ -216,7 +222,8 @@ public class SimpleLevelGenerator : MonoBehaviour
                 mediumRootPlaced = TryPreplaceMediumRoom();
                 if (mediumRootPlaced)
                 {
-                    GrowFromRootAnchors(mediumRootPlaced, Mathf.Max(1, initialBranchesFromMedium), Mathf.Max(1, initialStepsPerMediumBranch));
+                    lastMediumRoot = mediumRootPlaced;
+                    GrowLoopingBranchesFromMedium(mediumRootPlaced, Mathf.Max(1, initialBranchesFromMedium), Mathf.Max(1, initialStepsPerMediumBranch));
                 }
             }
 
@@ -234,6 +241,9 @@ public class SimpleLevelGenerator : MonoBehaviour
                     EnsureAllAnchorsClosed();
                 }
             }
+
+            // Optional player spawn at the end
+            TrySpawnPlayerFarFromMedium();
 
             
 
@@ -693,7 +703,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Optional anchor join offset
         if (Mathf.Abs(anchorJoinOffset) > 0f)
         {
-            instanceTransform.position += targetAnchor.forward * anchorJoinOffset;
+            instanceTransform.position -= targetAnchor.forward * anchorJoinOffset;
         }
 
         // Snap to lattice only if explicitly allowed for attached modules, then re-translate to keep anchors touching
@@ -998,28 +1008,91 @@ public class SimpleLevelGenerator : MonoBehaviour
         return best;
     }
 
-    // Grow from a specific root's anchors: choose N anchors and grow M steps from each
-    void GrowFromRootAnchors(Transform root, int branches, int steps)
+    // Grow from medium room: pick several anchors, grow longer runs prioritizing halls and looping via connectors when partners exist
+    void GrowLoopingBranchesFromMedium(Transform root, int branches, int steps)
     {
         if (!root) return;
         var rootAnchors = new List<Transform>();
         CollectAnchorsIntoList(root, rootAnchors);
+        // Shuffle anchors to avoid bias
+        for (int i = 0; i < rootAnchors.Count; i++)
+        {
+            int j = UnityEngine.Random.Range(i, rootAnchors.Count);
+            (rootAnchors[i], rootAnchors[j]) = (rootAnchors[j], rootAnchors[i]);
+        }
         int grown = 0;
         for (int i = 0; i < rootAnchors.Count && grown < branches; i++)
         {
             Transform a = rootAnchors[i];
             if (!a) continue;
             if (!availableAnchors.Contains(a)) continue;
-            // simple forward grow loop
-            Transform current = a;
-            for (int s = 0; s < steps; s++)
-            {
-                if (!availableAnchors.Contains(current)) break;
-                if (!TryPlaceModule(current)) { availableAnchors.Remove(current); break; }
-                Transform lastPlaced = placedModules.Count > 0 ? placedModules[placedModules.Count - 1] : null;
-                current = FindForwardMostAnchor(lastPlaced, current.forward);
-            }
+            GrowLoopFromAnchor(a, steps);
             grown++;
+        }
+    }
+
+    void GrowLoopFromAnchor(Transform startAnchor, int steps)
+    {
+        Transform current = startAnchor;
+        for (int s = 0; s < steps; s++)
+        {
+            if (current == null) break;
+            if (!availableAnchors.Contains(current)) break;
+            // If a partner exists, try connector first (triple connector weighted)
+            var partner = FindPartnerAnchor(current);
+            if (partner != null)
+            {
+                GameObject conn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, Vector3.Distance(current.position, Vector3.zero))
+                                  ?? PickBestConnector(current);
+                if (conn != null)
+                {
+                    var entry = FindEntryAnchorOnPrefab(conn);
+                    if (entry != null)
+                    {
+                        var placed = PlaceModule(conn, entry, current, out Transform placedEntry);
+                        if (placed != null)
+                        {
+                            placedModules.Add(placed);
+                            nonStartPlacements++;
+                            placementsSinceLastConnector++;
+                            CollectAnchorsIntoList(placed, availableAnchors);
+                            if (placedEntry) availableAnchors.Remove(placedEntry);
+                            availableAnchors.Remove(current);
+                            // continue forward from the new piece
+                            current = FindForwardMostAnchor(placed, current.forward);
+                            continue;
+                        }
+                    }
+                }
+            }
+            // Otherwise, place a hall
+            GameObject hall = PickBestHall(current);
+            if (hall == null)
+            {
+                hall = PickBestPrefab(hallwayPrefabs, current, preferHighAnchorCountNearHotspot);
+            }
+            if (hall != null)
+            {
+                var entry = FindEntryAnchorOnPrefab(hall);
+                if (entry != null)
+                {
+                    var placed = PlaceModule(hall, entry, current, out Transform placedEntry);
+                    if (placed != null)
+                    {
+                        placedModules.Add(placed);
+                        nonStartPlacements++;
+                        placementsSinceLastConnector++;
+                        CollectAnchorsIntoList(placed, availableAnchors);
+                        if (placedEntry) availableAnchors.Remove(placedEntry);
+                        availableAnchors.Remove(current);
+                        current = FindForwardMostAnchor(placed, current.forward);
+                        continue;
+                    }
+                }
+            }
+            // If both attempts failed, remove the anchor and stop this branch
+            availableAnchors.Remove(current);
+            break;
         }
     }
 
@@ -1060,6 +1133,142 @@ public class SimpleLevelGenerator : MonoBehaviour
         CollectAnchorsIntoList(placed, availableAnchors);
         if (placedEntryAnchor) availableAnchors.Remove(placedEntryAnchor);
         return placed;
+    }
+
+    [Header("Player Spawn (optional)")]
+    [SerializeField] bool spawnPlayerOnComplete = false;
+    [SerializeField] GameObject playerPrefab;
+    [SerializeField] float minPlayerSpawnDistanceFromMedium = 30f;
+    [SerializeField] int playerSpawnTryLimit = 50;
+    [SerializeField] LayerMask spawnGroundMask = ~0;
+    [Tooltip("Extra vertical lift applied to spawn to avoid clipping floors")]
+    [SerializeField] float spawnVerticalLift = 0.5f;
+    [SerializeField] float spawnGroundClearance = 0.1f;
+    [Header("Player Spawn (NavMesh)")]
+    [SerializeField] bool useNavMeshForSpawn = true;
+    [SerializeField] float navSampleRadius = 4f;
+    [SerializeField] int navMeshAreaMask = -1; // NavMesh.AllAreas
+
+    void TrySpawnPlayerFarFromMedium()
+    {
+        if (!spawnPlayerOnComplete || playerPrefab == null) return;
+        Vector3 mediumPos = lastMediumRoot != null ? lastMediumRoot.position : Vector3.zero;
+        float minSqr = minPlayerSpawnDistanceFromMedium * minPlayerSpawnDistanceFromMedium;
+
+        // Build candidate anchor-based positions inside halls/rooms away from medium
+        var moduleCandidates = new List<Transform>();
+        for (int i = 0; i < placedModules.Count; i++)
+        {
+            var t = placedModules[i]; if (!t) continue;
+            if (t.name.StartsWith("DoorCap_")) continue;
+            var meta = t.GetComponent<RoomMeta>(); if (meta == null) continue;
+            if (meta.category == RoomCategory.Hallway || meta.category == RoomCategory.Room)
+            {
+                if ((t.position - mediumPos).sqrMagnitude >= minSqr) moduleCandidates.Add(t);
+            }
+        }
+        if (moduleCandidates.Count == 0) moduleCandidates.AddRange(placedModules);
+
+        int tries = 0;
+        while (tries < playerSpawnTryLimit)
+        {
+            tries++;
+            var m = moduleCandidates[UnityEngine.Random.Range(0, moduleCandidates.Count)];
+            if (!m) continue;
+            // Use an anchor offset inward to avoid walls
+            var anchors = new List<Transform>();
+            CollectAnchorsIntoList(m, anchors);
+            Vector3 basePos = m.position + Vector3.up * 3f;
+            if (anchors.Count > 0)
+            {
+                var a = anchors[UnityEngine.Random.Range(0, anchors.Count)];
+                if (a) basePos = a.position + a.forward * 1.5f + Vector3.up * 3f;
+            }
+            // Prefer NavMesh sampling if available
+            bool spawned = false;
+            if (useNavMeshForSpawn)
+            {
+                NavMeshHit nHit;
+                if (NavMesh.SamplePosition(basePos, out nHit, navSampleRadius, navMeshAreaMask))
+                {
+                    Vector3 candidate = nHit.position + Vector3.up * (spawnGroundClearance + Mathf.Max(0f, spawnVerticalLift));
+                    spawned = TrySpawnAtCandidate(candidate);
+                    if (spawned) return;
+                }
+            }
+            // Fallback: Raycast down to floor
+            RaycastHit hit;
+            if (Physics.Raycast(basePos, Vector3.down, out hit, 20f, spawnGroundMask, QueryTriggerInteraction.Ignore))
+            {
+                Vector3 candidate = hit.point + Vector3.up * (spawnGroundClearance + Mathf.Max(0f, spawnVerticalLift));
+                spawned = TrySpawnAtCandidate(candidate);
+                if (spawned) return;
+            }
+        }
+    }
+
+    bool TrySpawnAtCandidate(Vector3 candidate)
+    {
+        // Require reasonably horizontal floor beneath
+        RaycastHit ground;
+        if (!Physics.Raycast(candidate + Vector3.up * 0.25f, Vector3.down, out ground, 1f, spawnGroundMask, QueryTriggerInteraction.Ignore))
+            return false;
+        if (Vector3.Dot(ground.normal, Vector3.up) < 0.6f) return false;
+        // Require overhead ceiling within ~3.5m to avoid spawning on roofs
+        if (!Physics.Raycast(candidate + Vector3.up * 0.1f, Vector3.up, 3.5f, spawnGroundMask, QueryTriggerInteraction.Ignore))
+            return false;
+        // Small capsule overlap test for a typical controller
+        float radius = 0.3f; float height = 1.8f;
+        Vector3 p1 = candidate + Vector3.up * 0.1f;
+        Vector3 p2 = candidate + Vector3.up * (height - 0.1f);
+        if (Physics.CheckCapsule(p1, p2, radius, spawnGroundMask, QueryTriggerInteraction.Ignore))
+            return false;
+        SpawnPlayerGrounded(candidate);
+        return true;
+    }
+
+    void SpawnPlayerGrounded(Vector3 startPos)
+    {
+        var player = Instantiate(playerPrefab, startPos, Quaternion.identity);
+        // Use CC from children if not on root
+        var cc = player.GetComponentInChildren<CharacterController>();
+        var rb = player.GetComponent<Rigidbody>();
+        if (rb) rb.isKinematic = true;
+        if (cc)
+        {
+            bool had = cc.enabled; cc.enabled = false;
+            // Build capsule in world space using the CC's own transform
+            float radius = cc.radius;
+            float half = Mathf.Max(0f, cc.height * 0.5f - radius);
+            // CharacterController capsule is aligned along the CC transform's up axis
+            Vector3 centerWorld = cc.transform.TransformPoint(cc.center);
+            Vector3 upWorld = cc.transform.up;
+            Vector3 worldBottom = centerWorld - upWorld * half;
+            Vector3 worldTop = centerWorld + upWorld * half;
+            // Cast slightly downward to settle on ground
+            RaycastHit hit;
+            if (Physics.CapsuleCast(worldTop + Vector3.up * 0.2f, worldBottom + Vector3.up * 0.2f, Mathf.Max(0.01f, radius * 0.98f), Vector3.down, out hit, 6f, spawnGroundMask, QueryTriggerInteraction.Ignore))
+            {
+                float clearance = Mathf.Max(spawnGroundClearance, 0.05f) + spawnVerticalLift;
+                player.transform.position += Vector3.down * hit.distance + Vector3.up * clearance;
+            }
+            else if (Physics.Raycast(player.transform.position + Vector3.up * 2f, Vector3.down, out hit, 6f, spawnGroundMask, QueryTriggerInteraction.Ignore))
+            {
+                player.transform.position = hit.point + Vector3.up * (spawnGroundClearance + spawnVerticalLift);
+            }
+            cc.enabled = had;
+        }
+        else
+        {
+            // Fallback: just raycast to ground
+            RaycastHit hit;
+            if (Physics.Raycast(player.transform.position + Vector3.up * 2f, Vector3.down, out hit, 6f, spawnGroundMask, QueryTriggerInteraction.Ignore))
+            {
+                player.transform.position = hit.point + Vector3.up * (spawnGroundClearance + spawnVerticalLift);
+            }
+        }
+        if (rb) rb.isKinematic = false;
+        Physics.SyncTransforms();
     }
 
     
@@ -1368,12 +1577,12 @@ public class SimpleLevelGenerator : MonoBehaviour
         if (!entry) entry = inst.transform;
         AlignModuleYawOnly(inst.transform, entry, targetAnchor, snapYawTo30);
         // small inset to avoid z-fighting
-        inst.transform.position += targetAnchor.forward * doorCapInset;
+        inst.transform.position -= targetAnchor.forward * doorCapInset;
         inst.name = $"DoorCap_{(parent && parent.GetComponent<RoomMeta>() ? "Room" : "Hall")}_{targetAnchor.GetInstanceID()}";
         var pivot = inst.transform.Find("CapPivot");
         if (pivot != null)
         {
-            Vector3 desired = targetAnchor.position + targetAnchor.forward * doorCapInset;
+            Vector3 desired = targetAnchor.position - targetAnchor.forward * doorCapInset;
             Vector3 delta = pivot.position - inst.transform.position;
             inst.transform.position = desired - delta;
         }

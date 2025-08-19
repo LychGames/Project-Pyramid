@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!1 &3275239326320859530
+--- !u!1 &722529788395925422
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8,39 +8,39 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 4217395363950861086}
-  - component: {fileID: 1372602311066374053}
-  - component: {fileID: 1399517624989257669}
-  - component: {fileID: 2209847674265702487}
+  - component: {fileID: 1119729622752151225}
+  - component: {fileID: 8479354783789641220}
+  - component: {fileID: 5421792929316519457}
+  - component: {fileID: 7916315963574787740}
   m_Layer: 7
-  m_Name: Camera
+  m_Name: PlayerView
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &4217395363950861086
+--- !u!4 &1119729622752151225
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3275239326320859530}
+  m_GameObject: {fileID: 722529788395925422}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 1.6, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 3991952725504585357}
+  m_Father: {fileID: 1965121568828487615}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!20 &1372602311066374053
+--- !u!20 &8479354783789641220
 Camera:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3275239326320859530}
+  m_GameObject: {fileID: 722529788395925422}
   m_Enabled: 1
   serializedVersion: 2
   m_ClearFlags: 1
@@ -65,7 +65,7 @@ Camera:
     y: 0
     width: 1
     height: 1
-  near clip plane: 0.01
+  near clip plane: 0.3
   far clip plane: 1000
   field of view: 60
   orthographic: 0
@@ -85,21 +85,21 @@ Camera:
   m_OcclusionCulling: 1
   m_StereoConvergence: 10
   m_StereoSeparation: 0.022
---- !u!81 &1399517624989257669
+--- !u!81 &5421792929316519457
 AudioListener:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3275239326320859530}
+  m_GameObject: {fileID: 722529788395925422}
   m_Enabled: 1
---- !u!114 &2209847674265702487
+--- !u!114 &7916315963574787740
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3275239326320859530}
+  m_GameObject: {fileID: 722529788395925422}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
@@ -137,7 +137,7 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
---- !u!1 &3445014330807446232
+--- !u!1 &5373870680375142524
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -145,50 +145,46 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 3991952725504585357}
-  - component: {fileID: 6156954884144229124}
-  - component: {fileID: 1943324945069549673}
-  - component: {fileID: 8813919750073352083}
-  - component: {fileID: 681828556714954700}
-  - component: {fileID: 3963022828526685655}
+  - component: {fileID: 4055958829601554168}
+  - component: {fileID: 4202699905081623605}
+  - component: {fileID: 1045243523928500708}
   m_Layer: 7
-  m_Name: Player
+  m_Name: Capsule
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &3991952725504585357
+--- !u!4 &4055958829601554168
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3445014330807446232}
+  m_GameObject: {fileID: 5373870680375142524}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.662, z: 0}
+  m_LocalScale: {x: 0.5, y: 0.6, z: 0.5}
   m_ConstrainProportionsScale: 0
-  m_Children:
-  - {fileID: 4217395363950861086}
-  m_Father: {fileID: 0}
+  m_Children: []
+  m_Father: {fileID: 1965121568828487615}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &6156954884144229124
+--- !u!33 &4202699905081623605
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3445014330807446232}
+  m_GameObject: {fileID: 5373870680375142524}
   m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &1943324945069549673
+--- !u!23 &1045243523928500708
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3445014330807446232}
+  m_GameObject: {fileID: 5373870680375142524}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -227,13 +223,48 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!143 &8813919750073352083
+--- !u!1 &8602267101886464043
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1965121568828487615}
+  - component: {fileID: 118091607232303924}
+  - component: {fileID: 3750853288704091518}
+  m_Layer: 7
+  m_Name: Player2
+  m_TagString: Player
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1965121568828487615
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8602267101886464043}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 4055958829601554168}
+  - {fileID: 1119729622752151225}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!143 &118091607232303924
 CharacterController:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3445014330807446232}
+  m_GameObject: {fileID: 8602267101886464043}
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
@@ -247,68 +278,48 @@ CharacterController:
   serializedVersion: 3
   m_Height: 2
   m_Radius: 0.28
-  m_SlopeLimit: 50
+  m_SlopeLimit: 45
   m_StepOffset: 0.3
   m_SkinWidth: 0.06
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 1, z: 0}
---- !u!114 &681828556714954700
+--- !u!114 &3750853288704091518
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3445014330807446232}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 400ed81e993a5ec4ca799e9fc079d5b3, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  equippedAbility: {fileID: 11400000, guid: 78187fc80308055468339b562166cac0, type: 2}
-  preActivateSeconds: 0.4
-  onPreActivateStart:
-    m_PersistentCalls:
-      m_Calls: []
-  onPreActivateEnd:
-    m_PersistentCalls:
-      m_Calls: []
---- !u!114 &3963022828526685655
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 3445014330807446232}
+  m_GameObject: {fileID: 8602267101886464043}
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: cb77cf44315dd9b43a817aeafaef2d7c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  cam: {fileID: 4217395363950861086}
+  cam: {fileID: 1119729622752151225}
   mouseSensitivity: 50
   minPitch: -85
   maxPitch: 85
-  mouseSmoothTime: 0
+  mouseSmoothTime: 0.03
   maxMouseStep: 6
-  walkSpeed: 3.5
-  sprintSpeed: 7
+  walkSpeed: 4
+  sprintSpeed: 6.5
   sprintKey: 304
   airControlUp: 0.35
-  airControlDown: 0.7
-  airSpeedFallMultiplier: 1.15
+  airControlDown: 0.6
+  airSpeedFallMultiplier: 1.1
   jumpLaunchForwardBoost: 1.4
   jumpLaunchDecay: 6
   coyoteTime: 0.02
   jumpBuffer: 0.1
-  jumpCooldownSeconds: 0.35
+  jumpCooldownSeconds: 0.5
   gravity: -24
   fallMultiplier: 4
-  lowJumpMultiplier: 6
+  lowJumpMultiplier: 4.2
   maxFallSpeed: -120
   headRatio: 0.125
-  tapHeads: 5
-  holdExtraHeads: 0
-  maxHeadsCap: 5.3
+  tapHeads: 6.5
+  holdExtraHeads: 0.25
+  maxHeadsCap: 7
   tapGuaranteeFraction: 0.95
   jumpBlendTime: 0.14
   jumpBlendCurve:
@@ -340,15 +351,15 @@ MonoBehaviour:
   minAscendTime: 0.18
   apexHangTime: 0.26
   hangGravityMultiplier: 0.55
-  dramaticTapChance: 0.08
+  dramaticTapChance: 0
   dramaticBonusHeads: 0.2
   dramaticCooldown: 6
   headroomMargin: 0.12
   jumpImmediateKickFraction: 0.75
-  jumpForwardExtra: 2.5
-  inheritPlanarFactor: 0.7
-  jumpForwardDecay: 4.2
-  inheritPlanarDecay: 1
+  jumpForwardExtra: 2
+  inheritPlanarFactor: 0.5
+  jumpForwardDecay: 3.5
+  inheritPlanarDecay: 1.2
   jumpInputDeadZone: 0.15
   holdAscendGravityScale: 0.65
   holdSustainTime: 0.8
@@ -360,13 +371,13 @@ MonoBehaviour:
   cameraHeight: 1.8
   skinWidth: 0.06
   enableHeadBob: 1
-  bobFreq: 8
-  bobAmp: 0.13
+  bobFreq: 9.5
+  bobAmp: 0.07
   bobStartSmooth: 0.06
   bobRunFreqMultiplier: 1.25
-  backBobAmpMultiplier: 0.3
+  backBobAmpMultiplier: 0.7
   enableWallSlide: 1
-  wallCheckDistance: 0.4
+  wallCheckDistance: 0.5
   wallMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -376,7 +387,7 @@ MonoBehaviour:
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  useFallCurve: 0
+  useFallCurve: 1
   fallStartScale: 0.3
   fallMidT: 0.5
   fallMidScale: 0.65

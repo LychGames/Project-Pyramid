@@ -148,18 +148,18 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0974f556009c8ac43b467f90eddf9eed, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerPrefab: {fileID: 3445014330807446232, guid: f125295df303e334ab9a711d36f08778, type: 3}
+  playerPrefab: {fileID: 8602267101886464043, guid: 8b24423738044ec4786d3e1989f76d8f, type: 3}
   fallbackSpawn: {fileID: 1143035891}
   groundMask:
     serializedVersion: 2
-    m_Bits: 4294967295
+    m_Bits: 32763
   dropHeight: 0.3
   extraClearance: 0.03
   grounding:
     enabled: 1
     groundMask:
       serializedVersion: 2
-      m_Bits: 4294967295
+      m_Bits: 32763
     dropHeight: 0.3
     extraClearance: 0.03
 --- !u!4 &1143035891
@@ -222,8 +222,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4c96d518914dc164383434cc283a5fba, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  bakeOnStart: 0
-  useEndOfFrame: 1
+  bakeOnStart: 1
+  useEndOfFrame: 0
   logDuration: 0
 --- !u!114 &2114845931
 MonoBehaviour:
@@ -284,10 +284,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   seed: 0
   randomizeSeed: 1
-  maxModules: 140
+  maxModules: 120
   levelRoot: {fileID: 2114845929}
-  startRoomPrefab: {fileID: 2951377282462629891, guid: 2bdb3e25b11620d4b9f2059b178dcc3b, type: 3}
-  startIsVirtual: 0
+  startRoomPrefab: {fileID: 0}
+  startIsVirtual: 1
+  startFromMediumRoom: 1
   hallwayPrefabs:
   - {fileID: 8909149088169348352, guid: f5d6bcf9a94d4aa4fbaa090227d6c245, type: 3}
   - {fileID: 3788417896623736208, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
@@ -303,7 +304,6 @@ MonoBehaviour:
   - {fileID: 1610342867267922345, guid: c9928e0dc5b97d947ad848ddc97fc080, type: 3}
   - {fileID: 6186995812821802193, guid: 3c5c37601ea97b54097627d93af3edab, type: 3}
   - {fileID: 2614292931710157305, guid: ded4befe881a70a44832b18ab6302417, type: 3}
-  - {fileID: 4532723815890408064, guid: 633ac0d21648b1c48a72b2da294d0c05, type: 3}
   roomPrefabs:
   - {fileID: 202433006534595424, guid: eebacb422ed9a0b49937f5ad57db404d, type: 3}
   - {fileID: 645644820273830860, guid: 6932fe9359844d34d8bc28245e96b1b6, type: 3}
@@ -360,6 +360,18 @@ MonoBehaviour:
   preferHighAnchorCountNearHotspot: 1
   minHallsBeforeBranch: 3
   minLoopConnectorsBeforeMediumRooms: 2
+  spawnPlayerOnComplete: 1
+  playerPrefab: {fileID: 8602267101886464043, guid: 8b24423738044ec4786d3e1989f76d8f, type: 3}
+  minPlayerSpawnDistanceFromMedium: 30
+  playerSpawnTryLimit: 50
+  spawnGroundMask:
+    serializedVersion: 2
+    m_Bits: 32699
+  spawnVerticalLift: 0.5
+  spawnGroundClearance: 0.1
+  useNavMeshForSpawn: 1
+  navSampleRadius: 4
+  navMeshAreaMask: -1
 --- !u!1 &3551985676194542737
 GameObject:
   m_ObjectHideFlags: 0
