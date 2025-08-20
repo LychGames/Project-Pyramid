@@ -341,9 +341,10 @@ public class SimpleLevelGenerator : MonoBehaviour
                 Transform anchor = unconnectedAnchors[i];
                 try
                 {
+                    // SMART CAPPING: Use room door cap for large room doorways
                     GameObject prefab = roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
                     PlaceCapAtAnchor(prefab, anchor, largeRoom);
-                    Debug.Log($"[Gen] Large room capped: {anchor.name}");
+                    Debug.Log($"[Gen] Large room capped: {anchor.name} with room door cap");
                 }
                 catch (System.Exception e)
                 {
@@ -467,18 +468,29 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (!anchor) continue;
             
             Transform owner = GetModuleRootForAnchor(anchor);
-            RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-            bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
-
-            GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
-                                : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
-            if (prefab == null) prefab = doorCapPrefab;
+            // SMART CAPPING: Use appropriate door cap based on anchor type
+            RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
+            bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
+            
+            GameObject prefab;
+            if (isRoomAnchor && roomDoorCapPrefab != null)
+            {
+                prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
+            }
+            else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
+            {
+                prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
+            }
+            else
+            {
+                prefab = doorCapPrefab; // Fallback to default
+            }
 
             if (prefab != null)
             {
                 PlaceCapAtAnchor(prefab, anchor, owner != null ? owner : levelRoot);
                 connectedAnchors.Add(anchor);
-                Debug.Log($"[Gen] Final pass capped: {anchor.name} at {anchor.position}");
+                Debug.Log($"[Gen] Final pass capped: {anchor.name} at {anchor.position} with {(isRoomAnchor ? "room" : "hallway")} cap");
             }
         }
         
@@ -596,19 +608,30 @@ public class SimpleLevelGenerator : MonoBehaviour
                 continue;
             }
             
-            RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-            bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
-
-            GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
-                                : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
-            if (prefab == null) prefab = doorCapPrefab;
+            // SMART CAPPING: Use appropriate door cap based on anchor type
+            RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
+            bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
+            
+            GameObject prefab;
+            if (isRoomAnchor && roomDoorCapPrefab != null)
+            {
+                prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
+            }
+            else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
+            {
+                prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
+            }
+            else
+            {
+                prefab = doorCapPrefab; // Fallback to default
+            }
 
             if (prefab != null)
             {
                 try
                 {
                     PlaceCapAtAnchor(prefab, anchor, owner);
-                    Debug.Log($"[Gen] ULTRA pass capped: {anchor.name} at {anchor.position}");
+                    Debug.Log($"[Gen] ULTRA pass capped: {anchor.name} at {anchor.position} with {(isRoomAnchor ? "room" : "hallway")} cap");
                 }
                 catch (System.Exception e)
                 {
@@ -674,15 +697,29 @@ public class SimpleLevelGenerator : MonoBehaviour
             try
             {
                 Transform owner = GetModuleRootForAnchor(anchor);
-                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-                bool isRoom = meta != null && meta.category == RoomCategory.Room;
+                RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
                 
-                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
+                // SMART CAPPING: Use appropriate door cap based on anchor type
+                GameObject prefab;
+                if (isRoomAnchor && roomDoorCapPrefab != null)
+                {
+                    prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
+                }
+                else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
+                {
+                    prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
+                }
+                else
+                {
+                    prefab = doorCapPrefab; // Fallback to default
+                }
+                
                 if (prefab != null)
                 {
                     PlaceCapAtAnchor(prefab, anchor, owner);
                     cappedCount++;
-                    Debug.Log($"[Gen] SIMPLE capped isolated anchor: {anchor.name}");
+                    Debug.Log($"[Gen] SIMPLE capped isolated anchor: {anchor.name} with {(isRoomAnchor ? "room" : "hallway")} cap");
                 }
             }
             catch (System.Exception e)
@@ -1066,7 +1103,7 @@ public class SimpleLevelGenerator : MonoBehaviour
             availableAnchors.Remove(placedEntryAnchor);
         }
 
-        // Mark anchors as connected
+        // Mark anchors as connected (UNIFIED: no room/hall distinction)
         connectedAnchors.Add(anchor);
         if (placedEntryAnchor) 
         {
@@ -2754,13 +2791,8 @@ public class SimpleLevelGenerator : MonoBehaviour
                 if (!anchor) continue; // Safety check
                 
                 Transform owner = GetModuleRootForAnchor(anchor);
-                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-                bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
-
-                // Choose best prefab in priority: room-specific -> hallway-specific -> generic
-                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
-                                    : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
-                if (prefab == null) prefab = doorCapPrefab;
+                // UNIFIED CAPPING: Use generic door cap for everything (no room/hall distinction)
+                GameObject prefab = doorCapPrefab;
 
                 if (prefab == null)
                 {
@@ -2821,13 +2853,23 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (owner != null && owner.name.StartsWith("DoorCap_")) continue; // skip caps
             if (!IsAnchorOpen(a, allAnchors)) continue;
 
-            RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-            bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
-
-            // Choose best prefab in priority: room-specific -> hallway-specific -> generic
-            GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
-                                : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
-            if (prefab == null) prefab = doorCapPrefab;
+            // SMART CAPPING: Use appropriate door cap based on anchor type
+            RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
+            bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
+            
+            GameObject prefab;
+            if (isRoomAnchor && roomDoorCapPrefab != null)
+            {
+                prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
+            }
+            else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
+            {
+                prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
+            }
+            else
+            {
+                prefab = doorCapPrefab; // Fallback to default
+            }
 
             // Place using anchor alignment so the cap's entry DoorAnchor snaps to the target anchor
             PlaceCapAtAnchor(prefab, a, owner != null ? owner : levelRoot);
@@ -2838,6 +2880,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     {
         if (!a) return false; // Invalid anchor is not "open"
         
+        // UNIFIED APPROACH: Treat all anchors the same way (no room/hall distinction)
         // First check if anchor is explicitly marked as connected
         if (connectedAnchors.Contains(a))
         {
@@ -2886,24 +2929,25 @@ public class SimpleLevelGenerator : MonoBehaviour
                     return false;
                 }
                 
-                // Check if this anchor belongs to any room - be more lenient for all rooms
+                // Check if this anchor belongs to any room - be more strict about room connections
                 RoomMeta anchorMeta = anchorOwner ? anchorOwner.GetComponent<RoomMeta>() : null;
                 bool isAnyRoom = anchorMeta != null && anchorMeta.category == RoomCategory.Room;
                 bool isLargeRoom = isAnyRoom && (anchorOwner.name.ToLower().Contains("large") || anchorOwner.name.ToLower().Contains("big"));
                 
-                // Use lenient threshold for all rooms, extra lenient for large rooms
+                // For rooms, we need to be more strict - only consider connected if there's a REAL connection
+                // For hallways, we can be more lenient since they're designed to connect
                 float threshold;
                 if (isLargeRoom)
                 {
-                    threshold = connectionDistance * 1.5f; // Extra lenient for large rooms
+                    threshold = connectionDistance * 1.2f; // Slightly lenient for large rooms
                 }
                 else if (isAnyRoom)
                 {
-                    threshold = Mathf.Max(connectionDistance * 1.0f, 6f); // Lenient for all rooms, minimum 6m
+                    threshold = connectionDistance * 0.9f; // More strict for regular rooms
                 }
                 else
                 {
-                    threshold = connectionDistance * 0.8f; // Normal threshold for hallways
+                    threshold = connectionDistance * 1.0f; // Normal threshold for hallways
                 }
                 
                 // Only consider "connected" if partner is close enough AND facing roughly opposite
@@ -2913,9 +2957,9 @@ public class SimpleLevelGenerator : MonoBehaviour
                     Debug.Log($"[Gen] Anchor {a.name} has face-to-face partner {partner.name} at distance {distance:F2} with facing {facing:F2} - definitely connected");
                     return false; // Treat as "connected" - robust geometric check
                 }
-                else if (distance < threshold && AnchorsCouldConnectForCapping(a, partner))
+                else if (distance < threshold && facing > 0.8f && AnchorsCouldConnectForCapping(a, partner))
                 {
-                    Debug.Log($"[Gen] Anchor {a.name} on {(anchorOwner ? anchorOwner.name : "unknown")} has partner {partner.name} at distance {distance:F2} (threshold: {threshold:F2}, isLargeRoom: {isLargeRoom}, same floor)");
+                    Debug.Log($"[Gen] Anchor {a.name} on {(anchorOwner ? anchorOwner.name : "unknown")} has partner {partner.name} at distance {distance:F2} (threshold: {threshold:F2}, isLargeRoom: {isLargeRoom}, facing: {facing:F2})");
                     return false; // Treat as "connected"
                 }
             }
@@ -2962,36 +3006,36 @@ public class SimpleLevelGenerator : MonoBehaviour
     {
         if (!anchor) return false;
         
-        // Check all placed modules for nearby hallway connections
+        // Check all placed modules for nearby connections (INCLUDE ROOMS!)
         foreach (Transform module in placedModules)
         {
             if (!module) continue;
             
-            // Only check hallway modules
+            // Check ALL modules - hallways AND rooms are part of the map
             RoomMeta meta = module.GetComponent<RoomMeta>();
-            if (meta == null || meta.category != RoomCategory.Hallway) continue;
+            if (meta == null) continue; // Skip only if no metadata at all
             
-            // Get all anchors in this hallway module
-            var hallwayAnchors = new List<Transform>();
-            CollectAnchorsIntoList(module, hallwayAnchors);
+            // Get all anchors in this module (room or hallway)
+            var moduleAnchors = new List<Transform>();
+            CollectAnchorsIntoList(module, moduleAnchors);
             
-            foreach (Transform hallAnchor in hallwayAnchors)
+            foreach (Transform moduleAnchor in moduleAnchors)
             {
-                if (!hallAnchor || hallAnchor == anchor) continue;
+                if (!moduleAnchor || moduleAnchor == anchor) continue;
                 
                 // Check if on same floor
-                float yDiff = Mathf.Abs(anchor.position.y - hallAnchor.position.y);
+                float yDiff = Mathf.Abs(anchor.position.y - moduleAnchor.position.y);
                 if (yDiff > 2f) continue; // Different floors
                 
                 // Check distance
-                float distance = Vector3.Distance(anchor.position, hallAnchor.position);
+                float distance = Vector3.Distance(anchor.position, moduleAnchor.position);
                 if (distance < connectionDistance * 1.2f) // Generous threshold
                 {
                     // Check if they're roughly facing each other
-                    float dot = Vector3.Dot(anchor.forward, -hallAnchor.forward);
-                    if (dot > -0.8f) // Fairly lenient facing check
+                    float dot = Vector3.Dot(anchor.forward, -moduleAnchor.forward);
+                    if (dot > 0.8f) // Fairly lenient facing check - should be positive for facing anchors
                     {
-                        Debug.Log($"[Gen] VERIFIED connection: {anchor.name} <-> {hallAnchor.name} (module: {module.name}, distance: {distance:F2}, dot: {dot:F2})");
+                        Debug.Log($"[Gen] VERIFIED connection: {anchor.name} <-> {moduleAnchor.name} (module: {module.name}, distance: {distance:F2}, dot: {dot:F2})");
                         return true;
                     }
                 }
@@ -3052,16 +3096,30 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (!hasNearbyPartner)
             {
                 Transform owner = GetModuleRootForAnchor(anchor);
-                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-                bool isRoom = meta != null && meta.category == RoomCategory.Room;
+                RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
                 
-                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
+                // SMART CAPPING: Use appropriate door cap based on anchor type
+                GameObject prefab;
+                if (isRoomAnchor && roomDoorCapPrefab != null)
+                {
+                    prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
+                }
+                else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
+                {
+                    prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
+                }
+                else
+                {
+                    prefab = doorCapPrefab; // Fallback to default
+                }
+                
                 if (prefab != null)
                 {
                     try
                     {
                         PlaceCapAtAnchor(prefab, anchor, owner);
-                        Debug.Log($"[Gen] CAPPED isolated anchor: {anchor.name} (no partners within {connectionDistance})");
+                        Debug.Log($"[Gen] CAPPED isolated anchor: {anchor.name} (no partners within {connectionDistance}) with {(isRoomAnchor ? "room" : "hallway")} cap");
                     }
                     catch (System.Exception e)
                     {
@@ -3132,10 +3190,10 @@ public class SimpleLevelGenerator : MonoBehaviour
                 continue;
             }
             
-            // USE THE DEFINITIVE SOURCE: connectedAnchors HashSet from generation
-            bool isActuallyConnected = connectedAnchors.Contains(anchor);
+            // USE UNIFIED APPROACH: Check both connectedAnchors AND verify active connections
+            bool isConnected = !IsAnchorOpen(anchor, allAnchors);
             
-            if (isActuallyConnected)
+            if (isConnected)
             {
                 anchorsConnected++;
                 if (logGeneration) Debug.Log($"[Gen] {anchor.name} connected - skipping");
@@ -3145,25 +3203,38 @@ public class SimpleLevelGenerator : MonoBehaviour
                 if (logGeneration) Debug.Log($"[Gen] {anchor.name} unconnected - will cap");
             }
             
-            bool isConnected = isActuallyConnected;
-            
             // If not connected, cap it
             if (!isConnected)
             {
+                // SMART CAPPING: Use appropriate door cap based on anchor type
                 Transform owner = GetModuleRootForAnchor(anchor);
-                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-                bool isRoom = meta != null && meta.category == RoomCategory.Room;
+                RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
                 
-                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab : doorCapPrefab;
-                if (prefab == null) prefab = doorCapPrefab;
+                GameObject prefab;
+                if (isRoomAnchor && roomDoorCapPrefab != null)
+                {
+                    prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
+                    Debug.Log($"[Gen] Using room door cap for {anchor.name} on {owner.name}");
+                }
+                else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
+                {
+                    prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
+                    Debug.Log($"[Gen] Using hallway door cap for {anchor.name} on {owner.name}");
+                }
+                else
+                {
+                    prefab = doorCapPrefab; // Fallback to default
+                    Debug.Log($"[Gen] Using default door cap for {anchor.name} on {owner.name}");
+                }
                 
                 if (prefab != null)
                 {
                     try
                     {
-                        PlaceCapAtAnchor(prefab, anchor, owner);
+                        PlaceCapAtAnchor(prefab, anchor, owner != null ? owner : levelRoot);
                         capsPlaced++;
-                        Debug.Log($"[Gen] Capped unconnected anchor: {anchor.name}");
+                        Debug.Log($"[Gen] Capped unconnected anchor: {anchor.name} with {(isRoomAnchor ? "room" : "hallway")} cap");
                         
                         // IMPORTANT: Don't count caps against module limit
                         // (PlaceCapAtAnchor already adds to placedModules, but we don't enforce limits on caps)
@@ -3277,7 +3348,11 @@ public class SimpleLevelGenerator : MonoBehaviour
         AlignModuleYawOnly(inst.transform, entry, targetAnchor, snapYawTo30);
         // small inset to avoid z-fighting
         inst.transform.position -= targetAnchor.forward * doorCapInset;
-        inst.name = $"DoorCap_{(parent && parent.GetComponent<RoomMeta>() ? "Room" : "Hall")}_{targetAnchor.GetInstanceID()}";
+        // Better naming based on the actual prefab type
+        string capType = "Default";
+        if (capPrefab == roomDoorCapPrefab) capType = "Room";
+        else if (capPrefab == hallwayDoorCapPrefab) capType = "Hall";
+        inst.name = $"DoorCap_{capType}_{targetAnchor.GetInstanceID()}";
         var pivot = inst.transform.Find("CapPivot");
         if (pivot != null)
         {
@@ -3325,10 +3400,24 @@ public class SimpleLevelGenerator : MonoBehaviour
                 if (owner != null && owner.name.StartsWith("DoorCap_")) continue;
                 if (!IsAnchorOpen(a, anchors)) continue;
 
-                RoomMeta meta = owner ? owner.GetComponent<RoomMeta>() : null;
-                bool isRoom = meta != null && (meta.category == RoomCategory.Room || meta.category == RoomCategory.Start);
-                GameObject prefab = isRoom && roomDoorCapPrefab != null ? roomDoorCapPrefab
-                                    : (!isRoom && hallwayDoorCapPrefab != null ? hallwayDoorCapPrefab : doorCapPrefab);
+                // SMART CAPPING: Use appropriate door cap based on anchor type
+                RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
+                bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
+                
+                GameObject prefab;
+                if (isRoomAnchor && roomDoorCapPrefab != null)
+                {
+                    prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
+                }
+                else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
+                {
+                    prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
+                }
+                else
+                {
+                    prefab = doorCapPrefab; // Fallback to default
+                }
+                
                 if (prefab == null) continue;
                 PlaceCapAtAnchor(prefab, a, owner != null ? owner : levelRoot);
                 placedAny = true;

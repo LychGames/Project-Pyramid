@@ -842,7 +842,7 @@ MonoBehaviour:
   colliderSize: {x: 0.5, y: 2, z: 0.1}
   colliderCenter: {x: 0, y: 0, z: 0}
   autoManageCollider: 1
-  filterMode: 1
+  filterMode: 0
   specificKind: 1
   specificKinds: 01000000020000000300000004000000
   canConnectTo: 010000000200000003000000040000000500000006000000
@@ -1470,7 +1470,7 @@ MonoBehaviour:
   colliderSize: {x: 0.5, y: 2, z: 0.1}
   colliderCenter: {x: 0, y: 0, z: 0}
   autoManageCollider: 1
-  filterMode: 1
+  filterMode: 0
   specificKind: 1
   specificKinds: 01000000020000000300000004000000
   canConnectTo: 010000000200000003000000040000000500000006000000
@@ -1913,7 +1913,7 @@ MonoBehaviour:
   colliderSize: {x: 0.5, y: 2, z: 0.1}
   colliderCenter: {x: 0, y: 0, z: 0}
   autoManageCollider: 1
-  filterMode: 1
+  filterMode: 0
   specificKind: 1
   specificKinds: 01000000020000000300000004000000
   canConnectTo: 010000000200000003000000040000000500000006000000
@@ -2503,7 +2503,7 @@ MonoBehaviour:
   weight: 0
   connectionKind: 6
   hallWidth: 5
-  sizeClass: 0
+  sizeClass: 1
   themeTags: []
   isAdapter: 0
   subtype: 10
