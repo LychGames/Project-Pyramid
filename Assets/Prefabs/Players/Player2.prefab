@@ -14,7 +14,7 @@ GameObject:
   - component: {fileID: 7916315963574787740}
   m_Layer: 7
   m_Name: PlayerView
-  m_TagString: Untagged
+  m_TagString: MainCamera
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -148,9 +148,10 @@ GameObject:
   - component: {fileID: 4055958829601554168}
   - component: {fileID: 4202699905081623605}
   - component: {fileID: 1045243523928500708}
+  - component: {fileID: 4503284408676552000}
   m_Layer: 7
   m_Name: Capsule
-  m_TagString: Untagged
+  m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -223,6 +224,31 @@ MeshRenderer:
   m_SortingLayer: 0
   m_SortingOrder: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!143 &4503284408676552000
+CharacterController:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5373870680375142524}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Height: 2
+  m_Radius: 0.28
+  m_SlopeLimit: 45
+  m_StepOffset: 0.3
+  m_SkinWidth: 0.06
+  m_MinMoveDistance: 0.001
+  m_Center: {x: 0, y: 1, z: 0}
 --- !u!1 &8602267101886464043
 GameObject:
   m_ObjectHideFlags: 0
@@ -232,8 +258,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1965121568828487615}
-  - component: {fileID: 118091607232303924}
-  - component: {fileID: 3750853288704091518}
+  - component: {fileID: 1703117455991792825}
+  - component: {fileID: 771798357167757771}
   m_Layer: 7
   m_Name: Player2
   m_TagString: Player
@@ -250,7 +276,7 @@ Transform:
   m_GameObject: {fileID: 8602267101886464043}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 0.25, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -258,7 +284,7 @@ Transform:
   - {fileID: 1119729622752151225}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!143 &118091607232303924
+--- !u!143 &1703117455991792825
 CharacterController:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -278,12 +304,12 @@ CharacterController:
   serializedVersion: 3
   m_Height: 2
   m_Radius: 0.28
-  m_SlopeLimit: 45
+  m_SlopeLimit: 50
   m_StepOffset: 0.3
   m_SkinWidth: 0.06
   m_MinMoveDistance: 0.001
   m_Center: {x: 0, y: 1, z: 0}
---- !u!114 &3750853288704091518
+--- !u!114 &771798357167757771
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -361,7 +387,7 @@ MonoBehaviour:
   jumpForwardDecay: 4.2
   inheritPlanarDecay: 1
   jumpInputDeadZone: 0.15
-  holdAscendGravityScale: 0.65
+  holdAscendGravityScale: 0.35
   holdSustainTime: 0.8
   tapAscendCutMultiplier: 8
   sprintArcBoost: 1.25
@@ -371,23 +397,23 @@ MonoBehaviour:
   cameraHeight: 1.8
   skinWidth: 0.06
   enableHeadBob: 1
-  bobFreq: 8
-  bobAmp: 0.13
+  bobFreq: 9.5
+  bobAmp: 0.07
   bobStartSmooth: 0.06
   bobRunFreqMultiplier: 1.25
-  backBobAmpMultiplier: 0.3
+  backBobAmpMultiplier: 0.7
   enableWallSlide: 1
-  wallCheckDistance: 0.4
+  wallCheckDistance: 0.5
   wallMask:
     serializedVersion: 2
     m_Bits: 4294967295
   wallProbeRadiusScale: 0.85
   groundCheck: {fileID: 0}
-  groundRadius: 0.2
+  groundRadius: 0.6
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
-  useFallCurve: 0
+  useFallCurve: 1
   fallStartScale: 0.3
   fallMidT: 0.5
   fallMidScale: 0.65

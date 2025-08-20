@@ -30,6 +30,11 @@ public class PlayerSpawner : MonoBehaviour
         {
             SetGroundMaskToLevelGeo();
         }
+        else
+        {
+            // Always sync FPController ground mask on startup
+            UpdateFPControllerGroundMask();
+        }
     }
 
     [ContextMenu("Set Ground Mask to LevelGeo Layer")]
@@ -55,6 +60,10 @@ public class PlayerSpawner : MonoBehaviour
         {
             groundMask = 1 << levelGeoLayer;
             grounding.groundMask = groundMask;
+            
+            // CRITICAL: Also update the FPController's ground mask for jumping!
+            UpdateFPControllerGroundMask();
+            
             Debug.Log($"PlayerSpawner: Set ground mask to '{foundName}' layer ({levelGeoLayer}). Mask value: {groundMask}");
         }
         else
@@ -79,9 +88,41 @@ public class PlayerSpawner : MonoBehaviour
     {
         groundMask = ~0; // Everything
         grounding.groundMask = groundMask;
+        
+        // Also update the FPController's ground mask
+        UpdateFPControllerGroundMask();
+        
         Debug.Log($"PlayerSpawner: Set ground mask to EVERYTHING. Mask value: {groundMask}");
     }
+    
+    void UpdateFPControllerGroundMask()
+    {
+        // Find and update the FPController's ground mask to match ours
+        FPController fpController = GetComponent<FPController>();
+        
+        // If not found on this GameObject, try to find it in children
+        if (fpController == null)
+        {
+            fpController = GetComponentInChildren<FPController>();
+        }
+        
+        if (fpController != null)
+        {
+            fpController.groundMask = groundMask;
+            Debug.Log($"PlayerSpawner: Updated FPController ground mask to {groundMask} (found on {fpController.gameObject.name})");
+        }
+        else
+        {
+            Debug.LogWarning("PlayerSpawner: No FPController found on this GameObject or its children! Jump grounding may not work correctly.");
+        }
+    }
 
+    [ContextMenu("Sync FPController Ground Mask")]
+    void SyncFPControllerGroundMask()
+    {
+        UpdateFPControllerGroundMask();
+    }
+    
     [ContextMenu("Test Ground Detection")]
     void TestGroundDetection()
     {

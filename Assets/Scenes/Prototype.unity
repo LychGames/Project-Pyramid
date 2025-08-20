@@ -157,7 +157,7 @@ MonoBehaviour:
   extraClearance: 0.03
   maxGroundDistance: 10
   grounding:
-    enabled: 1
+    enabled: 0
     groundMask:
       serializedVersion: 2
       m_Bits: 32763
@@ -285,12 +285,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   seed: 0
   randomizeSeed: 1
-  maxModules: 60
+  maxModules: 80
   levelRoot: {fileID: 2114845929}
   startRoomPrefab: {fileID: 0}
   startIsVirtual: 0
+  startFromSmallRoom: 1
   startFromMediumRoom: 0
-  startFromLargeRoom: 1
+  startFromLargeRoom: 0
   hallwayPrefabs:
   - {fileID: 3788417896623736208, guid: 6b3585ded94caa84ba9777d14c014331, type: 3}
   - {fileID: 4110846225549992691, guid: 224aecb087cb6d945802809a28eb0bc8, type: 3}
@@ -306,7 +307,6 @@ MonoBehaviour:
   - {fileID: 6186995812821802193, guid: 3c5c37601ea97b54097627d93af3edab, type: 3}
   - {fileID: 2614292931710157305, guid: ded4befe881a70a44832b18ab6302417, type: 3}
   roomPrefabs:
-  - {fileID: 202433006534595424, guid: eebacb422ed9a0b49937f5ad57db404d, type: 3}
   - {fileID: 645644820273830860, guid: 6932fe9359844d34d8bc28245e96b1b6, type: 3}
   - {fileID: 8264252415290607671, guid: d3de60ff19d60074bb788968d9d86463, type: 3}
   - {fileID: 6113325913839197540, guid: e1633e9ec140e914dafee3639a841d5a, type: 3}
@@ -343,15 +343,20 @@ MonoBehaviour:
   hallwayDoorCapPrefab: {fileID: 1910117104408121033, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
   roomDoorCapPrefab: {fileID: 1831734268593136311, guid: 9936eaac02611974a8e3a916df62ee06, type: 3}
   doorCapInset: 0.0009
-  ensureAllAnchorsClosed: 1
+  ensureAllAnchorsClosed: 0
   capMaxPasses: 3
-  capPairDistanceExtra: 2
+  capPairDistanceExtra: 0.5
   capPairFacingMinDot: -0.2
   targetMediumRooms: 1
   mediumAnchorTryLimit: 25
   preplaceMediumRoom: 1
   smallRoomChanceBoost: 0.4
   targetSmallRooms: 4
+  roomChanceBoost: 0.6
+  allowRoomToRoomConnections: 1
+  guaranteedLargeRooms: 1
+  limitCloseTurns: 1
+  closeTurnThreshold: 15
   spawnRoomPrefab: {fileID: 4528086946729620798, guid: f29131f7ca5f6ac418af1b4fac606384, type: 3}
   mediumDistanceCells: 6
   mediumYawIndex: 0

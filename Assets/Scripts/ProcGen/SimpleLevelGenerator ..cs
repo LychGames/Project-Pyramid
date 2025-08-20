@@ -21,10 +21,12 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Header("Start Room")]
     [SerializeField] GameObject startRoomPrefab;  // Your 10m equilateral triangle
     [SerializeField] bool startIsVirtual = false;
+    [Tooltip("If true, start from a small room for natural generation flow")]
+    [SerializeField] bool startFromSmallRoom = true;
     [Tooltip("If true, do not place a start room; begin from a pre-placed medium room instead.")]
     [SerializeField] bool startFromMediumRoom = false;
-    [Tooltip("If true, begin from a pre-placed large room instead of start/medium. RECOMMENDED for party games like Lethal Company style.")]
-    [SerializeField] bool startFromLargeRoom = true;
+    [Tooltip("If true, begin from a pre-placed large room instead of start/medium. NOT RECOMMENDED - causes overlap issues.")]
+    [SerializeField] bool startFromLargeRoom = false;
 
     [Header("Prefab Lists")]
     [SerializeField] GameObject[] hallwayPrefabs;     // NewHall, HallLeft15, HallRight15, HallLeft30, HallRight30
@@ -101,6 +103,16 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField] float smallRoomChanceBoost = 0.3f; // Add 30% to small room chance
     [Tooltip("Target number of small rooms to place per level")]
     [SerializeField] int targetSmallRooms = 3;
+    [Tooltip("General boost to room selection over hallways")]
+    [SerializeField] float roomChanceBoost = 0.6f;
+    [Tooltip("Allow rooms to connect directly to other rooms")]
+    [SerializeField] bool allowRoomToRoomConnections = true;
+    [Tooltip("Guarantee at least this many large rooms spawn during generation")]
+    [SerializeField] int guaranteedLargeRooms = 1;
+    [Tooltip("Reduce turn frequency when modules are close together")]
+    [SerializeField] bool limitCloseTurns = true;
+    [Tooltip("Distance threshold for limiting turns")]
+    [SerializeField] float closeTurnThreshold = 15f;
     
     [Header("Spawn Room Settings")]
     [Tooltip("Dedicated spawn room prefab (should contain PlayerSpawn tag or SpawnPoint component)")]
@@ -177,21 +189,29 @@ public class SimpleLevelGenerator : MonoBehaviour
     [ContextMenu("Configure for Lethal Company Style")]
     public void ConfigureForLethalCompanyStyle()
     {
-        startFromLargeRoom = true;
+        // NEW APPROACH: Start from small room for natural flow
+        startFromSmallRoom = true;
+        startFromLargeRoom = false;
         startFromMediumRoom = false;
         startIsVirtual = false;
         sealOpenAnchorsAtEnd = true;
         spawnPlayerOnComplete = false; // Player spawning handled by PlayerSpawner component
-        initialBranchesFromMedium = Mathf.Max(2, initialBranchesFromMedium);
         reserveModulesForCaps = 0; // No need to reserve - door capping ignores module limits now!
         
-        // Boost small room frequency for variety
+        // Boost room frequency for variety
         smallRoomChanceBoost = 0.4f; // 40% boost for small rooms
         targetSmallRooms = 4; // Try to place at least 4 small rooms
+        roomChanceBoost = 0.6f; // 60% general boost for all rooms
+        allowRoomToRoomConnections = true; // Enable room-to-room connections
+        guaranteedLargeRooms = 1; // Guarantee at least 1 large room spawns naturally
+        
+        // Reduce close turns for cleaner layout
+        limitCloseTurns = true;
+        closeTurnThreshold = 15f;
         
         // Spawn room will be placed naturally within the generated level
         
-        Debug.Log("[Gen] Configured for Lethal Company style: starts from large room, boosts small room spawning, dedicated spawn room, ALL doorways capped");
+        Debug.Log("[Gen] Configured for Lethal Company style: starts from small room, guarantees large room, natural flow, ALL doorways capped");
     }
 
     [ContextMenu("Force Cap All Open Anchors")]
@@ -302,6 +322,28 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
         
         Debug.Log($"[Gen] NUCLEAR OPTION complete. Capped {cappedCount} anchors with ZERO checks.");
+    }
+    
+    [ContextMenu("Reset All Anchor Connection Restrictions")]
+    public void ResetAllAnchorRestrictions()
+    {
+        Debug.Log("[Gen] Resetting all DoorAnchor connection restrictions to allow everything...");
+        
+        DoorAnchor[] allAnchors = FindObjectsOfType<DoorAnchor>();
+        int resetCount = 0;
+        
+        foreach (DoorAnchor anchor in allAnchors)
+        {
+            if (anchor != null)
+            {
+                anchor.filterMode = DoorAnchor.ConnectionFilterMode.All;
+                resetCount++;
+                Debug.Log($"[Gen] Reset {anchor.name} to allow all connections");
+            }
+        }
+        
+        Debug.Log($"[Gen] ✅ Reset {resetCount} DoorAnchors to allow connections to anything!");
+        Debug.Log("[Gen] ⚠️ NOTE: This only affects anchors in the current scene. For prefabs, edit them directly in the Project window.");
     }
 
     void CapRemainingLargeRoomAnchors(Transform largeRoom)
@@ -724,10 +766,25 @@ public class SimpleLevelGenerator : MonoBehaviour
 
             ClearLevel();
 
-            if (!startFromMediumRoom && !startFromLargeRoom)
+            Transform startRoot = null;
+            
+            if (startFromSmallRoom)
             {
-                // Place start room
-                Transform startRoot = PlaceStartRoom();
+                // Start from a small room for natural flow
+                startRoot = PlaceSmallRoomStart();
+                if (startRoot == null)
+                {
+                    Debug.LogError("[Gen] Failed to place small room start!");
+                    return;
+                }
+                // Collect initial anchors
+                CollectAnchorsIntoList(startRoot, availableAnchors);
+                AssignInitialBranches(startRoot);
+            }
+            else if (!startFromMediumRoom && !startFromLargeRoom)
+            {
+                // Place traditional start room
+                startRoot = PlaceStartRoom();
                 if (startRoot == null)
                 {
                     Debug.LogError("[Gen] Failed to place start room!");
@@ -745,16 +802,16 @@ public class SimpleLevelGenerator : MonoBehaviour
             }
 
             // Generate the level
-            if (!startFromMediumRoom && !startFromLargeRoom && forceInitialGrowthFromAllStartAnchors)
+            if ((startFromSmallRoom || (!startFromMediumRoom && !startFromLargeRoom)) && forceInitialGrowthFromAllStartAnchors)
             {
                 var startAnchors = new List<Transform>(availableAnchors);
                 GrowFromInitialAnchors(startAnchors, Mathf.Max(1, initialStepsPerStart));
             }
 
             // Pre-place a medium room on the lattice and fan out from multiple doors
-            // Pre-place LARGE first if requested
+            // Pre-place LARGE first if requested (SKIP if starting from small room)
             Transform mediumRootPlaced = null;
-            if (startFromLargeRoom || (!startFromMediumRoom && preplaceMediumRoom))
+            if (!startFromSmallRoom && (startFromLargeRoom || (!startFromMediumRoom && preplaceMediumRoom)))
             {
                 var large = TryPreplaceLargeRoom();
                 if (large)
@@ -792,6 +849,12 @@ public class SimpleLevelGenerator : MonoBehaviour
             
             // Ensure small rooms get placed
             EnsureSmallRooms();
+            
+            // Ensure large rooms get placed (if starting from small room)
+            if (startFromSmallRoom)
+            {
+                EnsureLargeRooms();
+            }
 
             // Place the dedicated spawn room
             PlaceSpawnRoom();
@@ -867,6 +930,39 @@ public class SimpleLevelGenerator : MonoBehaviour
 
         placedModules.Add(startRoot);
         return startRoot;
+    }
+    
+    Transform PlaceSmallRoomStart()
+    {
+        // Find a small room prefab to start with
+        GameObject smallRoomPrefab = null;
+        if (roomPrefabs != null)
+        {
+            foreach (GameObject room in roomPrefabs)
+            {
+                if (room != null && IsSmallRoom(room))
+                {
+                    smallRoomPrefab = room;
+                    break;
+                }
+            }
+        }
+        
+        if (smallRoomPrefab == null)
+        {
+            Debug.LogError("[Gen] No small room prefab found for starting generation!");
+            return null;
+        }
+
+        var start = Instantiate(smallRoomPrefab, Vector3.zero, Quaternion.identity, levelRoot);
+        placedModules.Add(start.transform);
+        
+        if (logGeneration)
+        {
+            Debug.Log($"[Gen] Started generation from small room: {smallRoomPrefab.name}");
+        }
+
+        return start.transform;
     }
 
     Transform CreateVirtualStart()
@@ -1024,6 +1120,25 @@ public class SimpleLevelGenerator : MonoBehaviour
             Debug.Log($"[Gen] MARKING AS CONNECTED: {placedEntryAnchor.name} at {placedEntryAnchor.position}");
             connectedAnchors.Add(placedEntryAnchor);
         }
+        
+        // CRITICAL FIX: Mark ALL nearby anchors at the same position as connected
+        // This handles cases where multiple modules connect at the same anchor point
+        var allAnchorsAtThisLocation = GatherAllAnchorsInLevel();
+        foreach (Transform otherAnchor in allAnchorsAtThisLocation)
+        {
+            if (!otherAnchor || otherAnchor == anchor) continue;
+            
+            // If another anchor is at the same position, it's also connected
+            float distance = Vector3.Distance(anchor.position, otherAnchor.position);
+            if (distance < 0.1f) // Same position
+            {
+                if (!connectedAnchors.Contains(otherAnchor))
+                {
+                    Debug.Log($"[Gen] ALSO MARKING AS CONNECTED (same position): {otherAnchor.name} at {otherAnchor.position}");
+                    connectedAnchors.Add(otherAnchor);
+                }
+            }
+        }
 
         if (logGeneration)
         {
@@ -1145,16 +1260,49 @@ public class SimpleLevelGenerator : MonoBehaviour
             bool gateMediumRooms = loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms;
             GameObject room = PickBestRoomPrefab(anchor, favorSmallMediumRooms, gateMediumRooms);
 
+            // Check if we should limit turns when close to other modules
+            bool limitTurns = false;
+            if (limitCloseTurns)
+            {
+                foreach (Transform module in placedModules)
+                {
+                    if (module && Vector3.Distance(anchor.position, module.position) < closeTurnThreshold)
+                    {
+                        limitTurns = true;
+                        break;
+                    }
+                }
+            }
+
             float roll = (float)rng.NextDouble();
             if (!isEndcap)
             {
-                // Enhanced room chance with small room boost
-                float roomChance = 0.5f;
+                // Enhanced room chance with general room boost + small room boost
+                float roomChance = 0.5f + roomChanceBoost; // Base 50% + general room boost
                 if (room != null && IsSmallRoom(room)) roomChance += smallRoomChanceBoost;
                 
-                // Bias rooms (especially small ones): Room 50%+boost%, Hall 35%, Conn 15%
+                // Allow room-to-room connections if enabled
+                bool fromRoom = IsRoomAnchor(anchor);
+                if (fromRoom && !allowRoomToRoomConnections && room != null)
+                {
+                    Debug.Log($"[Gen] Skipping room-to-room connection (disabled): {anchor.name} -> room");
+                    room = null; // Force hallway or connector instead
+                }
+                
+                // Boosted room chances: Room 50%+boosts%, Hall 30%, Conn 20%
+                float hallChance = 0.3f;
+                float connChance = 0.2f;
+                
+                // If limiting turns, heavily favor straight halls over connectors
+                if (limitTurns)
+                {
+                    Debug.Log($"[Gen] Limiting turns near {anchor.name} - favoring straight halls");
+                    hallChance += connChance; // Give connector chance to halls
+                    connChance = 0.05f; // Reduce connector chance significantly
+                }
+                
                 if (roll < roomChance && room != null) return room;
-                else if (roll < (roomChance + 0.35f) && hall != null) return hall;
+                else if (roll < (roomChance + hallChance) && hall != null) return hall;
                 else if (conn != null) return conn;
             }
             else
@@ -1517,6 +1665,166 @@ public class SimpleLevelGenerator : MonoBehaviour
         
         Debug.Log($"[Gen] EnsureSmallRooms complete: {placedSmallRooms}/{targetSmallRooms} small rooms placed");
     }
+    
+    void EnsureLargeRooms()
+    {
+        // Count current large rooms
+        int placedLargeRooms = 0;
+        foreach (Transform module in placedModules)
+        {
+            if (module != null)
+            {
+                RoomMeta meta = module.GetComponent<RoomMeta>();
+                if (meta != null && IsLargeRoom(module.gameObject))
+                {
+                    placedLargeRooms++;
+                }
+            }
+        }
+        
+        if (placedLargeRooms >= guaranteedLargeRooms) 
+        {
+            Debug.Log($"[Gen] Large room requirement met: {placedLargeRooms}/{guaranteedLargeRooms}");
+            return;
+        }
+        
+        Debug.Log($"[Gen] EnsureLargeRooms: Have {placedLargeRooms}, need {guaranteedLargeRooms}. Placing more...");
+        
+        // Collect large room prefabs
+        var largePrefabs = new List<GameObject>();
+        if (roomPrefabs != null)
+        {
+            foreach (GameObject room in roomPrefabs)
+            {
+                if (room != null && IsLargeRoom(room))
+                {
+                    largePrefabs.Add(room);
+                }
+            }
+        }
+        
+        if (largePrefabs.Count == 0)
+        {
+            Debug.LogWarning("[Gen] No large room prefabs found! Cannot guarantee large room placement.");
+            return;
+        }
+        
+        // Try to place missing large rooms using available anchors
+        int attempts = 0;
+        int maxAttempts = 20;
+        var openAnchors = new List<Transform>(availableAnchors); // Copy current available anchors
+        
+        while (placedLargeRooms < guaranteedLargeRooms && attempts < maxAttempts && openAnchors.Count > 0)
+        {
+            attempts++;
+            
+            // Pick a random large room prefab
+            GameObject largeRoom = largePrefabs[rng.Next(largePrefabs.Count)];
+            
+            // Try to place it at a random open anchor
+            int anchorIndex = rng.Next(openAnchors.Count);
+            Transform targetAnchor = openAnchors[anchorIndex];
+            
+            // Temporarily store the prefab we want to place
+            GameObject originalPrefab = null;
+            if (roomPrefabs != null && roomPrefabs.Length > 0)
+            {
+                // Find the large room in our prefab arrays and use TryPlaceModule's normal flow
+                for (int i = 0; i < roomPrefabs.Length; i++)
+                {
+                    if (roomPrefabs[i] == largeRoom)
+                    {
+                        // Temporarily modify selection to favor this large room
+                        bool placed = TryPlaceSpecificRoom(targetAnchor, largeRoom);
+                        if (placed)
+                        {
+                            placedLargeRooms++;
+                            Debug.Log($"[Gen] Placed guaranteed large room {largeRoom.name}. Total large rooms: {placedLargeRooms}");
+                            
+                            // Update our local copy of open anchors
+                            openAnchors = new List<Transform>(availableAnchors);
+                            break;
+                        }
+                        else
+                        {
+                            // Remove this anchor and try another
+                            openAnchors.RemoveAt(anchorIndex);
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            if (placedLargeRooms < guaranteedLargeRooms && openAnchors.Count == 0)
+            {
+                Debug.LogWarning($"[Gen] Ran out of open anchors while trying to place guaranteed large rooms!");
+                break;
+            }
+        }
+        
+        Debug.Log($"[Gen] EnsureLargeRooms complete: {placedLargeRooms}/{guaranteedLargeRooms} large rooms placed");
+    }
+    
+    bool TryPlaceSpecificRoom(Transform anchor, GameObject roomPrefab)
+    {
+        if (!anchor || !roomPrefab) return false;
+        
+        // Check connection compatibility
+        if (!IsConnectionCompatible(roomPrefab, anchor))
+        {
+            return false;
+        }
+
+        // Find the entry anchor on the prefab
+        Transform entryAnchor = FindEntryAnchorOnPrefab(roomPrefab);
+        if (entryAnchor == null) return false;
+
+        // Place the module
+        Transform placedModule = PlaceModule(roomPrefab, entryAnchor, anchor, out Transform placedEntryAnchor);
+        if (placedModule == null) return false;
+
+        // Add new anchors to available list
+        CollectAnchorsIntoList(placedModule, availableAnchors);
+
+        // Remove the consumed entry anchor from available list
+        if (placedEntryAnchor)
+        {
+            availableAnchors.Remove(placedEntryAnchor);
+        }
+
+        // Mark anchors as connected (same as regular TryPlaceModule)
+        Debug.Log($"[Gen] MARKING AS CONNECTED: {anchor.name} at {anchor.position}");
+        connectedAnchors.Add(anchor);
+        if (placedEntryAnchor) 
+        {
+            Debug.Log($"[Gen] MARKING AS CONNECTED: {placedEntryAnchor.name} at {placedEntryAnchor.position}");
+            connectedAnchors.Add(placedEntryAnchor);
+        }
+        
+        // Mark ALL nearby anchors at the same position as connected
+        var allAnchorsAtThisLocation = GatherAllAnchorsInLevel();
+        foreach (Transform otherAnchor in allAnchorsAtThisLocation)
+        {
+            if (!otherAnchor || otherAnchor == anchor) continue;
+            
+            float distance = Vector3.Distance(anchor.position, otherAnchor.position);
+            if (distance < 0.1f) // Same position
+            {
+                if (!connectedAnchors.Contains(otherAnchor))
+                {
+                    Debug.Log($"[Gen] ALSO MARKING AS CONNECTED (same position): {otherAnchor.name} at {otherAnchor.position}");
+                    connectedAnchors.Add(otherAnchor);
+                }
+            }
+        }
+
+        if (logGeneration)
+        {
+            Debug.Log($"[Gen] Placed specific room {roomPrefab.name} at {placedModule.position}");
+        }
+
+        return true;
+    }
 
     void PlaceSpawnRoom()
     {
@@ -1590,6 +1898,23 @@ public class SimpleLevelGenerator : MonoBehaviour
             {
                 Debug.Log($"[Gen] SPAWN ROOM - MARKING AS CONNECTED: {placedEntryAnchor.name} at {placedEntryAnchor.position}");
                 connectedAnchors.Add(placedEntryAnchor);
+            }
+            
+            // CRITICAL FIX: Mark ALL nearby anchors at the same position as connected
+            var allAnchorsAtThisLocation = GatherAllAnchorsInLevel();
+            foreach (Transform otherAnchor in allAnchorsAtThisLocation)
+            {
+                if (!otherAnchor || otherAnchor == targetAnchor) continue;
+                
+                float distance = Vector3.Distance(targetAnchor.position, otherAnchor.position);
+                if (distance < 0.1f) // Same position
+                {
+                    if (!connectedAnchors.Contains(otherAnchor))
+                    {
+                        Debug.Log($"[Gen] SPAWN ROOM - ALSO MARKING AS CONNECTED (same position): {otherAnchor.name} at {otherAnchor.position}");
+                        connectedAnchors.Add(otherAnchor);
+                    }
+                }
             }
             
             Debug.Log($"[Gen] Placed spawn room naturally at {placedSpawnRoom.position} connected to {GetModuleRootForAnchor(targetAnchor)?.name}");
@@ -2522,6 +2847,22 @@ public class SimpleLevelGenerator : MonoBehaviour
         if (!prefab) return false;
         var meta = prefab.GetComponent<RoomMeta>();
         return meta != null && meta.subtype == PlacementCatalog.HallSubtype.SmallRoom;
+    }
+    
+    bool IsRoomAnchor(Transform anchor)
+    {
+        if (!anchor) return false;
+        Transform owner = GetModuleRootForAnchor(anchor);
+        if (!owner) return false;
+        RoomMeta meta = owner.GetComponent<RoomMeta>();
+        return meta != null && meta.category == RoomCategory.Room;
+    }
+    
+    bool IsLargeRoom(GameObject prefab)
+    {
+        if (!prefab) return false;
+        var meta = prefab.GetComponent<RoomMeta>();
+        return meta != null && meta.subtype == PlacementCatalog.HallSubtype.LargeRoom;
     }
 
     void ForceCapAllOpenAnchors()

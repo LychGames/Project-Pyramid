@@ -150,6 +150,17 @@ public class FPController : MonoBehaviour
         EnsureGroundCheck();
         ApplyControllerDimensions();
         RebuildFallCurve();
+        
+        // Auto-find camera if not set
+        if (!cam)
+        {
+            // Try children first, then parent's children (for complex hierarchies)
+            cam = GetComponentInChildren<Camera>()?.transform;
+            if (!cam && transform.parent)
+            {
+                cam = transform.parent.GetComponentInChildren<Camera>()?.transform;
+            }
+        }
     }
     void Start()
     {
@@ -176,6 +187,22 @@ public class FPController : MonoBehaviour
             groundCheck = t;
         }
     }
+    
+
+    
+    [ContextMenu("Fix Missing References")]
+    void FixMissingReferences()
+    {
+        if (!cc) cc = GetComponent<CharacterController>();
+        if (!cam) cam = GetComponentInChildren<Camera>()?.transform;
+        EnsureGroundCheck();
+        ApplyControllerDimensions();
+        Debug.Log("FPController: References checked and fixed");
+        
+
+    }
+    
+
     void ApplyControllerDimensions()
     {
         if (!cc) return;
@@ -215,29 +242,35 @@ public class FPController : MonoBehaviour
         Vector3 input = new Vector3(h, 0f, v); if (input.sqrMagnitude > 1f) input.Normalize();
         float targetSpeed = Input.GetKey(sprintKey) ? sprintSpeed : walkSpeed;
 
-        // --- Grounding ---
-        bool groundedSphere = Physics.CheckSphere(groundCheck.position, groundRadius, groundMask, QueryTriggerInteraction.Ignore);
-        groundedStrict = groundedSphere && cc.isGrounded;
+        // --- Grounding (Simple & Reliable) ---
+        groundedStrict = cc.isGrounded;
+        if (!groundedStrict)
+        {
+            // Backup check with raycast
+            groundedStrict = Physics.Raycast(transform.position + Vector3.up * 0.1f, Vector3.down, 0.2f, ~0, QueryTriggerInteraction.Ignore);
+        }
+
         if (groundedStrict)
         {
             lastGroundedTime = Time.time;
-
-            // Just landed this frame?
+            hasJumpedSinceGrounded = false; // Simple: reset every frame when grounded
+            
             if (!wasGroundedPrev)
             {
-                hasJumpedSinceGrounded = false;
-
-                // ⬇️ kill airborne carry the instant we land
                 _inheritVel = Vector3.zero;
                 jumpLaunchVel = Vector3.zero;
             }
 
-            if (velocityY.y < 0f && !blendingJump) velocityY.y = -2f; // sticky ground
+            if (velocityY.y < 0f && !blendingJump) velocityY.y = -2f;
         }
         wasGroundedPrev = groundedStrict;
 
 
-        if (Input.GetButtonDown("Jump")) lastJumpPressedTime = Time.time;
+        // Jump input detection (supports both Jump button and Space key)
+        if (Input.GetButtonDown("Jump") || Input.GetKeyDown(KeyCode.Space)) 
+        {
+            lastJumpPressedTime = Time.time;
+        }
 
         // --- Height targets (heads -> meters) ---
         float headH = Mathf.Max(0.1f, controllerHeight * headRatio);
@@ -267,6 +300,8 @@ public class FPController : MonoBehaviour
         bool canCoyote = (Time.time - lastGroundedTime) <= coyoteTime;
         bool hasBuffer = (Time.time - lastJumpPressedTime) <= jumpBuffer;
         bool canJumpNow = cooldownReady && canCoyote && hasBuffer && !hasJumpedSinceGrounded;
+        
+
 
         if (canJumpNow)
         {
@@ -437,6 +472,8 @@ public class FPController : MonoBehaviour
             float maxS = Mathf.Max(walkSpeed, sprintSpeed);
             float speed01 = Mathf.Clamp01(planar.magnitude / Mathf.Max(0.01f, maxS));
             bool shouldBob = groundedStrict && (movingF || movingB) && speed01 > 0.01f;
+
+
 
             if (shouldBob)
             {

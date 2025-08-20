@@ -907,7 +907,7 @@ MonoBehaviour:
   autoManageCollider: 1
   filterMode: 0
   specificKind: 1
-  specificKinds: 01000000020000000300000004000000
+  specificKinds: 
   canConnectTo: 010000000200000003000000040000000500000006000000
 --- !u!114 &702309730775460267
 MonoBehaviour:
