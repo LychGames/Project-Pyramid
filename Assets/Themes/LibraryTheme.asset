@@ -12,9 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4a0c680c08accee4c96e1e1fd3312992, type: 3}
   m_Name: LibraryTheme
   m_EditorClassIdentifier: 
-  wallMat: {fileID: 0}
-  floorMat: {fileID: 0}
-  ceilingMat: {fileID: 0}
+  wallMat: {fileID: 2100000, guid: 4d8565c9582de754994b2b52ac62a014, type: 2}
+  floorMat: {fileID: 2100000, guid: 3b3692bc1e5f2ce4da6f4634834d6190, type: 2}
+  ceilingMat: {fileID: 2100000, guid: 4d8565c9582de754994b2b52ac62a014, type: 2}
   wallTag: Wall
   floorTag: Floor
   ceilingTag: Ceiling

@@ -149,20 +149,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   playerPrefab: {fileID: 8602267101886464043, guid: 8b24423738044ec4786d3e1989f76d8f, type: 3}
-  fallbackSpawn: {fileID: 1143035891}
   groundMask:
     serializedVersion: 2
     m_Bits: 32763
-  dropHeight: 0.3
-  extraClearance: 0.03
   maxGroundDistance: 10
-  grounding:
-    enabled: 0
-    groundMask:
-      serializedVersion: 2
-      m_Bits: 32763
-    dropHeight: 0.3
-    extraClearance: 0.2
+  groundClearance: 0.1
 --- !u!4 &1143035891
 Transform:
   m_ObjectHideFlags: 0
@@ -285,7 +276,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   seed: 0
   randomizeSeed: 1
-  maxModules: 80
+  maxModules: 60
   levelRoot: {fileID: 2114845929}
   startRoomPrefab: {fileID: 0}
   startIsVirtual: 0
@@ -357,7 +348,6 @@ MonoBehaviour:
   guaranteedLargeRooms: 1
   limitCloseTurns: 1
   closeTurnThreshold: 15
-  spawnRoomPrefab: {fileID: 4528086946729620798, guid: f29131f7ca5f6ac418af1b4fac606384, type: 3}
   mediumDistanceCells: 6
   mediumYawIndex: 0
   initialBranchesFromMedium: 3
