@@ -76,6 +76,18 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Tooltip("Grow a few steps from each start anchor before free growth")] 
     [SerializeField] bool forceInitialGrowthFromAllStartAnchors = true;
     [SerializeField] int initialStepsPerStart = 2;
+    
+    [Header("Simplified Generation Settings")]
+    [Tooltip("Force hallways for the first N placements to create longer paths")]
+    [SerializeField] int forceHallwaysFirst = 8;
+    [Tooltip("Minimum halls required in a branch before allowing connectors")]
+    [SerializeField] int minHallsBeforeBranching = 4;
+    [Tooltip("Distance from start before allowing branching")]
+    [SerializeField] float minDistanceForBranching = 20f;
+    [Tooltip("Chance to place a room instead of hallway (0.0 to 1.0)")]
+    [SerializeField, Range(0f, 1f)] float roomChance = 0.2f;
+    [Tooltip("Maximum number of halls that can connect to the large room")]
+    [SerializeField] int maxHallsToLargeRoom = 2;
 
     [Header("Finishing")]
     [SerializeField] GameObject doorCapPrefab;
@@ -210,6 +222,29 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Player will spawn in the starting room via PlayerSpawner fallback
         
         Debug.Log("[Gen] Configured for Lethal Company style: starts from small room, guarantees large room, natural flow, ALL doorways capped");
+    }
+    
+    [ContextMenu("Configure for Simplified Hall Looping")]
+    public void ConfigureForSimplifiedHallLooping()
+    {
+        // Simplified generation focused on hall looping
+        startFromSmallRoom = true;
+        startFromLargeRoom = false;
+        startFromMediumRoom = false;
+        sealOpenAnchorsAtEnd = true;
+        
+        // Hall looping settings
+        forceHallwaysFirst = 12; // Force more hallways first for longer paths
+        minHallsBeforeBranching = 6; // Require more halls before branching
+        minDistanceForBranching = 25f; // Wait longer before allowing branching
+        roomChance = 0.15f; // Lower room chance for more hallways
+        maxHallsToLargeRoom = 2; // Only 2 halls to large room
+        
+        // Disable complex prioritization
+        prioritizeAnchorsThatCanConnect = false;
+        preferConnectorWhenPartnerDetected = false;
+        
+        Debug.Log("[Gen] Configured for simplified hall looping: longer paths, fewer connectors, limited large room connections");
     }
 
     [ContextMenu("Force Cap All Open Anchors")]
@@ -850,6 +885,9 @@ public class SimpleLevelGenerator : MonoBehaviour
                 EnsureLargeRooms();
             }
 
+            // NEW: Limit halls to large room to prevent too many connections
+            LimitHallsToLargeRoom();
+
             // === FINAL STEP: Cap unconnected anchors AFTER all generation is complete ===
             if (sealOpenAnchorsAtEnd && doorCapPrefab != null)
             {
@@ -1035,19 +1073,8 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             attempts++;
 
-            // Pick an anchor, prioritizing cross-branch potential partners
+            // SIMPLIFIED: Just pick anchors in order, no complex prioritization
             int anchorIndex = 0;
-            if (prioritizeAnchorsThatCanConnect)
-            {
-                anchorIndex = FindIndexOfAnchorWithCrossBranchPartner(availableAnchors);
-                if (anchorIndex < 0)
-                    anchorIndex = FindIndexOfAnchorWithPartner(availableAnchors);
-                if (anchorIndex < 0) anchorIndex = rng.Next(availableAnchors.Count);
-            }
-            else
-            {
-                anchorIndex = rng.Next(availableAnchors.Count);
-            }
             Transform anchor = availableAnchors[anchorIndex];
 
             // Try to place a module
@@ -1198,119 +1225,55 @@ public class SimpleLevelGenerator : MonoBehaviour
 
     GameObject ChooseModuleType(Transform anchor)
     {
-        // Simple rules: prefer hallways for long paths, connectors for branching
+        // SIMPLIFIED LOGIC: Prioritize hallways first, then connectors only when needed
+        
+        // Phase 1: Force hallways for the first several steps to create longer paths
+        if (nonStartPlacements < forceHallwaysFirst)
+        {
+            GameObject hall = PickBestHall(anchor);
+            if (hall != null) return hall;
+        }
+        
+        // Phase 2: Check if we need a connector for branching
+        bool needsBranching = false;
+        
+        // Only allow branching if we have enough halls in this branch
+        int branchId = GetBranchIdForAnchor(anchor);
+        branchHallsSinceBranch.TryGetValue(branchId, out int hallsSinceBranch);
+        if (hallsSinceBranch >= minHallsBeforeBranching)
+        {
+            needsBranching = true;
+        }
+        
+        // Check if we're far from start and could benefit from branching
         float distanceFromStart = Vector3.Distance(anchor.position, Vector3.zero);
-
-        bool inHallwayPhase = nonStartPlacements < forceHallwayFirstSteps;
-        bool connectorOnCooldown = placementsSinceLastConnector < minPlacementsBetweenConnectors;
-        bool crossBranchPreferred = false;
-        var partner = FindPartnerAnchor(anchor);
-        if (partner != null)
+        if (distanceFromStart > minDistanceForBranching && needsBranching)
         {
-            int aId = GetBranchIdForAnchor(anchor);
-            int bId = GetBranchIdForAnchor(partner);
-            crossBranchPreferred = (aId != bId);
-        }
-
-        // Enforce per-branch minimum halls before allowing connector branching
-        int branchIdHere = GetBranchIdForAnchor(anchor);
-        branchHallsSinceBranch.TryGetValue(branchIdHere, out int hallsSinceBranch);
-        bool branchAllowed = hallsSinceBranch >= minHallsBeforeBranch;
-
-        // PRIORITIZE LOOPING: if this anchor has a partner, try connectors FIRST (ignore branch gating)
-        if (partner != null && connectorPrefabs != null && connectorPrefabs.Length > 0)
-        {
-            // Try weighted junction first (triple connector), then fallback to any connector
-            var weightedConn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart);
-            if (weightedConn != null) return weightedConn;
-            return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
-        }
-
-        // Otherwise, allow branching connectors only when branch gating allows
-        if (branchAllowed && !inHallwayPhase && !connectorOnCooldown && preferConnectorWhenPartnerDetected && connectorPrefabs != null && connectorPrefabs.Length > 0)
-        {
-            var weightedConn2 = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart);
-            if (weightedConn2 != null) return weightedConn2;
-        }
-
-        // If we're far from start, allow more variety (score-based with hotspot bias)
-        if (distanceFromStart > maxBranchLength)
-        {
-            GameObject hall = PickBestHall(anchor);
-            GameObject conn = PickWeightedFromCatalog(PlacementCatalog.HallSubtype.Junction3_V, distanceFromStart) ?? PickBestConnector(anchor);
-            bool isEndcap = (partner == null);
-            bool favorSmallMediumRooms = !isEndcap; // prefer rooms inline, not at endcaps
-            bool gateMediumRooms = loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms;
-            GameObject room = PickBestRoomPrefab(anchor, favorSmallMediumRooms, gateMediumRooms);
-
-            // Check if we should limit turns when close to other modules
-            bool limitTurns = false;
-            if (limitCloseTurns)
+            // Allow connector for branching
+            if (connectorPrefabs != null && connectorPrefabs.Length > 0)
             {
-                foreach (Transform module in placedModules)
-                {
-                    if (module && Vector3.Distance(anchor.position, module.position) < closeTurnThreshold)
-                    {
-                        limitTurns = true;
-                        break;
-                    }
-                }
-            }
-
-            float roll = (float)rng.NextDouble();
-            if (!isEndcap)
-            {
-                // Enhanced room chance with general room boost + small room boost
-                float roomChance = 0.5f + roomChanceBoost; // Base 50% + general room boost
-                if (room != null && IsSmallRoom(room)) roomChance += smallRoomChanceBoost;
-                
-                // Allow room-to-room connections if enabled
-                bool fromRoom = IsRoomAnchor(anchor);
-                if (fromRoom && !allowRoomToRoomConnections && room != null)
-                {
-                    Debug.Log($"[Gen] Skipping room-to-room connection (disabled): {anchor.name} -> room");
-                    room = null; // Force hallway or connector instead
-                }
-                
-                // Boosted room chances: Room 50%+boosts%, Hall 30%, Conn 20%
-                float hallChance = 0.3f;
-                float connChance = 0.2f;
-                
-                // If limiting turns, heavily favor straight halls over connectors
-                if (limitTurns)
-                {
-                    Debug.Log($"[Gen] Limiting turns near {anchor.name} - favoring straight halls");
-                    hallChance += connChance; // Give connector chance to halls
-                    connChance = 0.05f; // Reduce connector chance significantly
-                }
-                
-                if (roll < roomChance && room != null) return room;
-                else if (roll < (roomChance + hallChance) && hall != null) return hall;
-                else if (conn != null) return conn;
-            }
-            else
-            {
-                // Endcaps: avoid rooms; prefer hall/connector
-                if (roll < 0.6f && hall != null) return hall;
-                else if (conn != null) return conn;
+                return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
             }
         }
-        else
+        
+        // Phase 3: Prefer hallways for longer paths, rooms only occasionally
+        if (rng.NextDouble() < roomChance)
         {
-            // Near start: prefer hallways for snaking
-            GameObject hall = PickBestPrefab(hallwayPrefabs, anchor, preferHighAnchorCountNearHotspot);
-            if (hall != null) return hall;
-        }
-
-        // Fallback with policy: if connectors are on cooldown or hallway phase enforced, use hallways/rooms
-        if (inHallwayPhase || connectorOnCooldown)
-        {
-            GameObject hall = PickBestHall(anchor);
-            if (hall != null) return hall;
-            GameObject room = PickBestRoomPrefab(anchor, false, loopConnectorsPlaced < minLoopConnectorsBeforeMediumRooms);
+            // Try to place a room
+            GameObject room = PickBestRoomPrefab(anchor, true, false);
             if (room != null) return room;
         }
-
+        
+        // Default: place a hallway
+        GameObject defaultHall = PickBestHall(anchor);
+        if (defaultHall != null) return defaultHall;
+        
+        // Fallback: any available hallway
+        if (hallwayPrefabs != null && hallwayPrefabs.Length > 0)
+        {
+            return hallwayPrefabs[rng.Next(hallwayPrefabs.Length)];
+        }
+        
         return null;
     }
 
@@ -2507,7 +2470,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Try catalog first when available: respect per-subtype weights (e.g., connectors vs turns)
         if (catalog != null)
         {
-            // Try Junctions first when we’re allowed to branch
+            // Try Junctions first when we're allowed to branch
             var e = catalog.PickWeighted(PlacementCatalog.HallSubtype.Junction3_V, nonStartPlacements, rng);
             if (e != null && e.prefab != null) return e.prefab;
         }
@@ -3134,44 +3097,24 @@ public class SimpleLevelGenerator : MonoBehaviour
 
     void CapUnconnectedAnchorsAfterGeneration()
     {
-        Debug.Log("[Gen] === CAPPING UNCONNECTED ANCHORS AFTER COMPLETE GENERATION ===");
+        Debug.Log("[Gen] === SIMPLIFIED DOOR CAPPING - ONLY TRULY ISOLATED ANCHORS ===");
         
-        // DEBUGGING: Check if levelRoot exists and has children
         if (levelRoot == null)
         {
             Debug.LogError("[Gen] PROBLEM: levelRoot is null!");
             return;
         }
         
-        Debug.Log($"[Gen] LevelRoot: {levelRoot.name}, child count: {levelRoot.childCount}");
-        for (int i = 0; i < levelRoot.childCount; i++)
-        {
-            var child = levelRoot.GetChild(i);
-            Debug.Log($"[Gen] LevelRoot child {i}: {child.name}");
-        }
-        
         // Get all anchors in the completed level
         var allAnchors = GatherAllAnchorsInLevel();
-
-        
-        if (logGeneration)
-        {
-            Debug.Log($"[Gen] Starting door capping - {connectedAnchors.Count} anchors marked as connected");
-        }
-        
-
         
         int capsPlaced = 0;
         int anchorsChecked = 0;
-        int anchorsWithCaps = 0;
-        int anchorsConnected = 0;
         
         foreach (Transform anchor in allAnchors)
         {
             if (!anchor) continue;
             anchorsChecked++;
-            
-            Debug.Log($"[Gen] Checking anchor: {anchor.name} at {anchor.position}");
             
             // Skip if already has a door cap
             bool alreadyHasCap = false;
@@ -3183,30 +3126,14 @@ public class SimpleLevelGenerator : MonoBehaviour
                     break;
                 }
             }
-            if (alreadyHasCap) 
-            {
-                anchorsWithCaps++;
-                Debug.Log($"[Gen] {anchor.name} already has cap - skipping");
-                continue;
-            }
+            if (alreadyHasCap) continue;
             
-            // USE UNIFIED APPROACH: Check both connectedAnchors AND verify active connections
-            bool isConnected = !IsAnchorOpen(anchor, allAnchors);
+            // SIMPLIFIED LOGIC: Only cap if anchor is truly isolated
+            bool isTrulyIsolated = IsAnchorTrulyIsolated(anchor, allAnchors);
             
-            if (isConnected)
+            if (isTrulyIsolated)
             {
-                anchorsConnected++;
-                if (logGeneration) Debug.Log($"[Gen] {anchor.name} connected - skipping");
-            }
-            else
-            {
-                if (logGeneration) Debug.Log($"[Gen] {anchor.name} unconnected - will cap");
-            }
-            
-            // If not connected, cap it
-            if (!isConnected)
-            {
-                // SMART CAPPING: Use appropriate door cap based on anchor type
+                // Use appropriate door cap based on anchor type
                 Transform owner = GetModuleRootForAnchor(anchor);
                 RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
                 bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
@@ -3214,18 +3141,15 @@ public class SimpleLevelGenerator : MonoBehaviour
                 GameObject prefab;
                 if (isRoomAnchor && roomDoorCapPrefab != null)
                 {
-                    prefab = roomDoorCapPrefab; // Use smaller door cap for room doorways
-                    Debug.Log($"[Gen] Using room door cap for {anchor.name} on {owner.name}");
+                    prefab = roomDoorCapPrefab;
                 }
                 else if (!isRoomAnchor && hallwayDoorCapPrefab != null)
                 {
-                    prefab = hallwayDoorCapPrefab; // Use larger door cap for hallways
-                    Debug.Log($"[Gen] Using hallway door cap for {anchor.name} on {owner.name}");
+                    prefab = hallwayDoorCapPrefab;
                 }
                 else
                 {
-                    prefab = doorCapPrefab; // Fallback to default
-                    Debug.Log($"[Gen] Using default door cap for {anchor.name} on {owner.name}");
+                    prefab = doorCapPrefab;
                 }
                 
                 if (prefab != null)
@@ -3234,10 +3158,7 @@ public class SimpleLevelGenerator : MonoBehaviour
                     {
                         PlaceCapAtAnchor(prefab, anchor, owner != null ? owner : levelRoot);
                         capsPlaced++;
-                        Debug.Log($"[Gen] Capped unconnected anchor: {anchor.name} with {(isRoomAnchor ? "room" : "hallway")} cap");
-                        
-                        // IMPORTANT: Don't count caps against module limit
-                        // (PlaceCapAtAnchor already adds to placedModules, but we don't enforce limits on caps)
+                        Debug.Log($"[Gen] Capped isolated anchor: {anchor.name}");
                     }
                     catch (System.Exception e)
                     {
@@ -3247,96 +3168,41 @@ public class SimpleLevelGenerator : MonoBehaviour
             }
         }
         
-        Debug.Log($"[Gen] === CAPPING COMPLETE ===");
+        Debug.Log($"[Gen] === SIMPLIFIED CAPPING COMPLETE ===");
         Debug.Log($"[Gen] Anchors checked: {anchorsChecked}");
-        Debug.Log($"[Gen] Anchors with existing caps: {anchorsWithCaps}");
-        Debug.Log($"[Gen] Anchors found connected: {anchorsConnected}");
         Debug.Log($"[Gen] Door caps placed: {capsPlaced}");
-        Debug.Log($"[Gen] Door caps are NOT counted against module limits - only rooms and halls count");
     }
-
-    bool HasOverlappingDoorTriggers(Transform anchor)
+    
+    // NEW METHOD: Check if anchor is truly isolated (no nearby modules or potential connections)
+    bool IsAnchorTrulyIsolated(Transform anchor, List<Transform> allAnchors)
     {
-        if (!anchor) return false;
+        if (!anchor) return true;
         
-        // Find the DoorTrigger collider on this anchor
-        Collider anchorTrigger = null;
-        
-        // Check the anchor itself for a collider
-        var anchorCollider = anchor.GetComponent<Collider>();
-        if (anchorCollider && anchorCollider.isTrigger)
+        // Check if there are any modules very close to this anchor
+        foreach (Transform module in placedModules)
         {
-            anchorTrigger = anchorCollider;
-        }
-        
-        // If not found, check children for DoorTrigger colliders
-        if (anchorTrigger == null)
-        {
-            var childColliders = anchor.GetComponentsInChildren<Collider>();
-            foreach (var collider in childColliders)
-            {
-                if (collider.isTrigger)
-                {
-                    anchorTrigger = collider;
-                    break;
-                }
-            }
-        }
-        
-        if (anchorTrigger == null)
-        {
-            Debug.Log($"[Gen] {anchor.name} has no trigger collider - cannot check for overlaps");
-            return false;
-        }
-        
-        Debug.Log($"[Gen] Checking {anchor.name} trigger collider: {anchorTrigger.name} (bounds: {anchorTrigger.bounds})");
-        
-        // Check for overlapping trigger colliders from other anchors
-        Bounds anchorBounds = anchorTrigger.bounds;
-        
-        // Use Physics.OverlapBox to find overlapping colliders
-        Vector3 center = anchorBounds.center;
-        Vector3 halfExtents = anchorBounds.extents;
-        Quaternion orientation = anchorTrigger.transform.rotation;
-        
-        Collider[] overlapping = Physics.OverlapBox(center, halfExtents, orientation);
-        
-        foreach (Collider other in overlapping)
-        {
-            if (other == anchorTrigger) continue; // Skip self
-            if (!other.isTrigger) continue; // Only check trigger colliders
+            if (!module) continue;
             
-            // Check if this overlapping collider belongs to a different anchor
-            Transform otherAnchor = other.transform;
-            while (otherAnchor != null && !otherAnchor.name.Contains("Anchor"))
+            float distance = Vector3.Distance(anchor.position, module.position);
+            if (distance < 2.0f) // If there's a module within 2 units, not isolated
             {
-                otherAnchor = otherAnchor.parent;
-            }
-            
-            if (otherAnchor != null && otherAnchor != anchor)
-            {
-                // Get the modules these anchors belong to
-                Transform anchorModule = GetModuleRootForAnchor(anchor);
-                Transform otherModule = GetModuleRootForAnchor(otherAnchor);
-                
-                Debug.Log($"[Gen] {anchor.name} (module: {(anchorModule ? anchorModule.name : "unknown")}) trigger overlaps with {otherAnchor.name} (module: {(otherModule ? otherModule.name : "unknown")}) - CONNECTED!");
-                
-                // Check if this is problematic overlap (same position modules)
-                if (anchorModule && otherModule && anchorModule != otherModule)
-                {
-                    float moduleDistance = Vector3.Distance(anchorModule.position, otherModule.position);
-                    if (moduleDistance < 5f) // Very close modules might be overlapping badly
-                    {
-                        Debug.LogWarning($"[Gen] POTENTIAL OVERLAP ISSUE: Modules {anchorModule.name} and {otherModule.name} are very close ({moduleDistance:F2}m) - this might be bad connector placement!");
-                    }
-                }
-                
-                return true;
+                return false;
             }
         }
         
-        Debug.Log($"[Gen] {anchor.name} trigger found no overlapping anchor triggers");
-        return false;
+        // Check if there are any other anchors that could potentially connect
+        foreach (Transform otherAnchor in allAnchors)
+        {
+            if (!otherAnchor || otherAnchor == anchor) continue;
+            
+            float distance = Vector3.Distance(anchor.position, otherAnchor.position);
+            if (distance < 3.0f) // If there's another anchor within 3 units, not isolated
+            {
+                return false;
+            }
+        }
+        
+        return true; // Truly isolated
     }
 
     void PlaceCapAtAnchor(GameObject capPrefab, Transform targetAnchor, Transform parent)
@@ -3423,6 +3289,92 @@ public class SimpleLevelGenerator : MonoBehaviour
                 placedAny = true;
             }
             if (!placedAny) break;
+        }
+    }
+
+    // NEW METHOD: Limit the number of halls that can reach the large room
+    void LimitHallsToLargeRoom()
+    {
+        if (allLargeRooms.Count == 0) return;
+        
+        Debug.Log("[Gen] Limiting halls to large room...");
+        
+        foreach (Transform largeRoom in allLargeRooms)
+        {
+            if (!largeRoom) continue;
+            
+            // Get all anchors on the large room
+            var largeRoomAnchors = new List<Transform>();
+            CollectAnchorsIntoList(largeRoom, largeRoomAnchors);
+            
+            // Count how many are connected to halls
+            int hallConnections = 0;
+            var connectedHallAnchors = new List<Transform>();
+            
+            foreach (Transform anchor in largeRoomAnchors)
+            {
+                if (!anchor) continue;
+                
+                // Check if this anchor connects to a hallway
+                bool connectsToHall = false;
+                foreach (Transform module in placedModules)
+                {
+                    if (!module) continue;
+                    
+                    RoomMeta meta = module.GetComponent<RoomMeta>();
+                    if (meta != null && meta.category == RoomCategory.Hallway)
+                    {
+                        // Check if this hallway has an anchor near the large room anchor
+                        var moduleAnchors = new List<Transform>();
+                        CollectAnchorsIntoList(module, moduleAnchors);
+                        
+                        foreach (Transform moduleAnchor in moduleAnchors)
+                        {
+                            float distance = Vector3.Distance(anchor.position, moduleAnchor.position);
+                            if (distance < 1.0f)
+                            {
+                                connectsToHall = true;
+                                connectedHallAnchors.Add(anchor);
+                                break;
+                            }
+                        }
+                        
+                        if (connectsToHall) break;
+                    }
+                }
+                
+                if (connectsToHall)
+                {
+                    hallConnections++;
+                }
+            }
+            
+            Debug.Log($"[Gen] Large room {largeRoom.name} has {hallConnections} hall connections");
+            
+            // If more than maxHallsToLargeRoom halls connect, cap some of the excess
+            if (hallConnections > maxHallsToLargeRoom)
+            {
+                int excessHalls = hallConnections - maxHallsToLargeRoom;
+                Debug.Log($"[Gen] Capping {excessHalls} excess hall connections to large room (max allowed: {maxHallsToLargeRoom})");
+                
+                // Cap the excess hall anchors (keep the first maxHallsToLargeRoom)
+                for (int i = maxHallsToLargeRoom; i < connectedHallAnchors.Count && (i - maxHallsToLargeRoom) < excessHalls; i++)
+                {
+                    Transform anchorToCap = connectedHallAnchors[i];
+                    if (anchorToCap && doorCapPrefab)
+                    {
+                        try
+                        {
+                            PlaceCapAtAnchor(doorCapPrefab, anchorToCap, largeRoom);
+                            Debug.Log($"[Gen] Capped excess hall connection: {anchorToCap.name}");
+                        }
+                        catch (System.Exception e)
+                        {
+                            Debug.LogError($"[Gen] Failed to cap excess hall connection {anchorToCap.name}: {e.Message}");
+                        }
+                    }
+                }
+            }
         }
     }
 }

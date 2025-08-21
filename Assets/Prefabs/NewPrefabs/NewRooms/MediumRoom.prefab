@@ -394,7 +394,7 @@ MonoBehaviour:
   anchorCount: 9
   catalogWeight: 3
   depthGate: 0
-  maxPerMap: 999
+  maxPerMap: 2
   isLandmark: 0
 --- !u!1 &756210002946175796
 GameObject:

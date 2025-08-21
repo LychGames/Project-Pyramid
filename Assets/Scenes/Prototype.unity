@@ -292,6 +292,7 @@ MonoBehaviour:
   - {fileID: 5246909648559635792, guid: 2decb1ec50ec6ab45bbdb0c73a120b84, type: 3}
   - {fileID: 2935833173782253810, guid: e7642d904c4ebb74484c8e92af1e7056, type: 3}
   - {fileID: 4460849860835224819, guid: 99faca630cc8c054fbea7d18064415a9, type: 3}
+  - {fileID: 6265630655432214273, guid: c41cbc09a06daa84b91b426be1f41392, type: 3}
   connectorPrefabs:
   - {fileID: 8636243694911918028, guid: 835d879909c4baa46b339c7d58321c2a, type: 3}
   - {fileID: 1610342867267922345, guid: c9928e0dc5b97d947ad848ddc97fc080, type: 3}
@@ -329,6 +330,11 @@ MonoBehaviour:
   limitStartAnchorsToOne: 0
   forceInitialGrowthFromAllStartAnchors: 1
   initialStepsPerStart: 2
+  forceHallwaysFirst: 8
+  minHallsBeforeBranching: 4
+  minDistanceForBranching: 20
+  roomChance: 0.2
+  maxHallsToLargeRoom: 2
   doorCapPrefab: {fileID: 1910117104408121033, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
   sealOpenAnchorsAtEnd: 1
   hallwayDoorCapPrefab: {fileID: 1910117104408121033, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
