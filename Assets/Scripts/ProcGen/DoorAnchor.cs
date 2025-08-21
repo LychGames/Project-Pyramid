@@ -3,6 +3,12 @@
 
 using UnityEngine;
 
+// Room restriction types for door anchors
+public enum RoomRestriction { Any, Specific }
+
+// Module restriction types for door anchors
+public enum ModuleRestriction { Any, RoomsOnly, HallwaysOnly, ConnectorsOnly, SpecificRoomType }
+
 [ExecuteAlways]
 public class DoorAnchor : MonoBehaviour
 {
@@ -23,6 +29,16 @@ public class DoorAnchor : MonoBehaviour
     public ConnectionKind specificKind = ConnectionKind.StraightHall;
     [Tooltip("If filterMode = Specific, use this list to allow multiple kinds. If empty, 'specificKind' is used.")]
     public ConnectionKind[] specificKinds = new ConnectionKind[0];
+    
+    [Header("Special Room Restrictions")]
+    [Tooltip("What type of rooms this anchor can connect to")]
+    public RoomRestriction roomRestriction = RoomRestriction.Any;
+    [Tooltip("If RoomRestriction is Specific, only this room type can connect")]
+    public RoomType allowedRoomType = RoomType.Extract;
+    
+    [Header("Module Type Restrictions")]
+    [Tooltip("What types of modules can connect to this anchor")]
+    public ModuleRestriction moduleRestriction = ModuleRestriction.Any;
     
     // Legacy field retained for backward compatibility but hidden from Inspector
     [HideInInspector]
@@ -98,6 +114,34 @@ public class DoorAnchor : MonoBehaviour
             return false;
         }
         return kind == specificKind;
+    }
+    
+    // Check if a specific room type is allowed on this anchor
+    public bool AllowsRoomType(RoomType roomType)
+    {
+        if (roomRestriction == RoomRestriction.Any) return true;
+        return roomType == allowedRoomType;
+    }
+    
+    // Check if a specific module type can connect to this anchor
+    public bool AllowsModuleType(string moduleType)
+    {
+        if (moduleRestriction == ModuleRestriction.Any) return true;
+        
+        switch (moduleRestriction)
+        {
+            case ModuleRestriction.RoomsOnly:
+                return moduleType == "Room";
+            case ModuleRestriction.HallwaysOnly:
+                return moduleType == "Hallway";
+            case ModuleRestriction.ConnectorsOnly:
+                return moduleType == "Connector";
+            case ModuleRestriction.SpecificRoomType:
+                // For specific room types, only allow rooms (no hallways/connectors)
+                return moduleType == "Room";
+            default:
+                return true;
+        }
     }
 
     void TrySetDoorTriggerLayer()

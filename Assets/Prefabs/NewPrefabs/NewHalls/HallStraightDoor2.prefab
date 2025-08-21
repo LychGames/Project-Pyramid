@@ -104,9 +104,11 @@ MonoBehaviour:
   colliderSize: {x: 0.5, y: 2, z: 0.1}
   colliderCenter: {x: 0, y: 0, z: 0}
   autoManageCollider: 1
-  filterMode: 1
+  filterMode: 0
   specificKind: 1
   specificKinds: 01000000020000000300000004000000
+  roomRestriction: 0
+  allowedRoomType: 1
   canConnectTo: 010000000200000003000000040000000500000006000000
 --- !u!114 &6446039709774125200
 MonoBehaviour:
@@ -172,9 +174,11 @@ MonoBehaviour:
   colliderSize: {x: 0.5, y: 2, z: 0.1}
   colliderCenter: {x: 0, y: 0, z: 0}
   autoManageCollider: 1
-  filterMode: 1
+  filterMode: 0
   specificKind: 1
   specificKinds: 01000000020000000300000004000000
+  roomRestriction: 0
+  allowedRoomType: 1
   canConnectTo: 010000000200000003000000040000000500000006000000
 --- !u!114 &1810561044994485103
 MonoBehaviour:
@@ -693,6 +697,7 @@ MonoBehaviour:
   sizeClass: 0
   themeTags: []
   isAdapter: 0
+  roomType: 0
   subtype: 0
   anchorCount: 4
   catalogWeight: 1
@@ -753,6 +758,8 @@ MonoBehaviour:
   filterMode: 0
   specificKind: 1
   specificKinds: 
+  roomRestriction: 0
+  allowedRoomType: 1
   canConnectTo: 010000000200000003000000040000000500000006000000
 --- !u!114 &4693165635563365673
 MonoBehaviour:
@@ -1361,6 +1368,8 @@ MonoBehaviour:
   filterMode: 0
   specificKind: 1
   specificKinds: 
+  roomRestriction: 0
+  allowedRoomType: 1
   canConnectTo: 010000000200000003000000040000000500000006000000
 --- !u!114 &1339794086680940208
 MonoBehaviour:

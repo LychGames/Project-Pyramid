@@ -5,6 +5,9 @@ using UnityEngine;
 
 public enum RoomCategory { Start, Hallway, Junction, Room }
 
+// Room types for special room restrictions
+public enum RoomType { Regular, Extract, Basement, BasementStairs, StairRoom, Summoning }
+
 // More granular connection kinds so anchors can whitelist compatible targets
 public enum ConnectionKind
 {
@@ -37,6 +40,10 @@ public class RoomMeta : MonoBehaviour
     [Tooltip("Mark true for width reducers/expanders/adapters")]
     public bool isAdapter = false;
 
+    [Header("Room Type")]
+    [Tooltip("What type of room this is - affects which door anchors can connect to it")]
+    public RoomType roomType = RoomType.Regular;
+    
     [Header("Placement Catalog Metadata (edit here on the prefab)")]
     [Tooltip("Subtype used by the generator/catalog for selection.")]
     public PlacementCatalog.HallSubtype subtype = PlacementCatalog.HallSubtype.Straight;

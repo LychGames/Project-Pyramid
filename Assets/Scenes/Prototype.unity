@@ -276,7 +276,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   seed: 0
   randomizeSeed: 1
-  maxModules: 45
+  maxModules: 80
   levelRoot: {fileID: 2114845929}
   startRoomPrefab: {fileID: 0}
   startIsVirtual: 0
@@ -289,18 +289,21 @@ MonoBehaviour:
   - {fileID: 5246909648559635792, guid: 2decb1ec50ec6ab45bbdb0c73a120b84, type: 3}
   - {fileID: 2935833173782253810, guid: e7642d904c4ebb74484c8e92af1e7056, type: 3}
   - {fileID: 4460849860835224819, guid: 99faca630cc8c054fbea7d18064415a9, type: 3}
+  - {fileID: 2323147182432981015, guid: 6d40245249560ff42bba1f07522af608, type: 3}
+  - {fileID: 8742724341481209801, guid: 1cc2e33484b5ec94a842be15288ab06f, type: 3}
+  - {fileID: 1556127720519255585, guid: 0b859cb8233e3f54998454e338526d78, type: 3}
   connectorPrefabs:
   - {fileID: 6114925261518455473, guid: f77ce48854403cb408b6e1767dd008d3, type: 3}
   - {fileID: 1610342867267922345, guid: c9928e0dc5b97d947ad848ddc97fc080, type: 3}
   - {fileID: 6186995812821802193, guid: 3c5c37601ea97b54097627d93af3edab, type: 3}
   - {fileID: 2614292931710157305, guid: ded4befe881a70a44832b18ab6302417, type: 3}
-  - {fileID: 2323147182432981015, guid: 6d40245249560ff42bba1f07522af608, type: 3}
-  - {fileID: 8742724341481209801, guid: 1cc2e33484b5ec94a842be15288ab06f, type: 3}
-  - {fileID: 1556127720519255585, guid: 0b859cb8233e3f54998454e338526d78, type: 3}
   roomPrefabs:
   - {fileID: 8264252415290607671, guid: d3de60ff19d60074bb788968d9d86463, type: 3}
   - {fileID: 6113325913839197540, guid: e1633e9ec140e914dafee3639a841d5a, type: 3}
   - {fileID: 5228721896931584280, guid: 3a851d67ccadc3c499ef63795bfa4e3e, type: 3}
+  - {fileID: 5081928019043461902, guid: e86b93dde6f087e4eb67bffa9226c649, type: 3}
+  - {fileID: 165853826526243823, guid: ace444474a5d5864195c7ed16c824186, type: 3}
+  - {fileID: 7297331190371626517, guid: e7e81bf89661cbd44ab2b593be04dd6e, type: 3}
   activeTheme: {fileID: 11400000, guid: ef61e3b242f8b5b409b0c9b57b245ce0, type: 2}
   catalog: {fileID: 0}
   cellSize: 2.5
@@ -328,11 +331,13 @@ MonoBehaviour:
   limitStartAnchorsToOne: 0
   forceInitialGrowthFromAllStartAnchors: 1
   initialStepsPerStart: 2
-  forceHallwaysFirst: 20
-  minHallsBeforeBranching: 6
-  minDistanceForBranching: 25
-  roomChance: 0.15
+  forceHallwaysFirst: 3
+  minHallsBeforeBranching: 2
+  minDistanceForBranching: 10
+  roomChance: 0.25
   maxHallsToLargeRoom: 2
+  minBasementsRequired: 4
+  secondFloorRoomBoost: 3
   doorCapPrefab: {fileID: 1910117104408121033, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}
   sealOpenAnchorsAtEnd: 1
   hallwayDoorCapPrefab: {fileID: 1910117104408121033, guid: ef45d61b96b3e964faae4d9447f2f478, type: 3}

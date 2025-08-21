@@ -80,7 +80,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Header("Simplified Generation Settings")]
     [Tooltip("Force hallways for the first N placements to create longer paths")]
     [SerializeField] int forceHallwaysFirst = 8;
-    [Tooltip("Minimum halls required in a branch before allowing connectors")]
+    [Tooltip("Minimum halls required in a branch before allowing branching")]
     [SerializeField] int minHallsBeforeBranching = 4;
     [Tooltip("Distance from start before allowing branching")]
     [SerializeField] float minDistanceForBranching = 20f;
@@ -88,6 +88,14 @@ public class SimpleLevelGenerator : MonoBehaviour
     [SerializeField, Range(0f, 1f)] float roomChance = 0.2f;
     [Tooltip("Maximum number of halls that can connect to the large room")]
     [SerializeField] int maxHallsToLargeRoom = 2;
+    
+    [Header("Special Room Requirements")]
+    [Tooltip("Minimum number of basements to build per generation")]
+    [SerializeField] int minBasementsRequired = 4;
+    [Tooltip("Boost chance for second-floor rooms (multiplier)")]
+    [SerializeField] float secondFloorRoomBoost = 2.0f;
+    
+
 
     [Header("Finishing")]
     [SerializeField] GameObject doorCapPrefab;
@@ -156,6 +164,8 @@ public class SimpleLevelGenerator : MonoBehaviour
     private int totalConnectorsPlaced = 0;
     private int totalHallwaysPlaced = 0;
     private int placedMediumRooms = 0;
+    private int placedBasements = 0; // Track basements placed
+    private int placedSecondFloorRooms = 0; // Track second-floor rooms placed
     private readonly HashSet<Transform> connectedAnchors = new HashSet<Transform>();
     private readonly List<Transform> allLargeRooms = new List<Transform>(); // Track ALL large rooms
     // Branch tracking: encourage cross-branch connections
@@ -221,7 +231,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         
         // Player will spawn in the starting room via PlayerSpawner fallback
         
-        Debug.Log("[Gen] Configured for Lethal Company style: starts from small room, guarantees large room, natural flow, ALL doorways capped");
+        Debug.Log("[Gen] Configured for Lethal Company style: starts from small room, guarantees stair room, natural flow, ALL doorways capped");
     }
     
     [ContextMenu("Configure for Triple Connector Focus")]
@@ -245,6 +255,52 @@ public class SimpleLevelGenerator : MonoBehaviour
         
         Debug.Log("[Gen] Configured for ULTRA-SIMPLE generation: triple connectors + halls, respects maxModules");
     }
+    
+    [ContextMenu("Configure for Basement + Second Floor Focus")]
+    public void ConfigureForBasementAndSecondFloorFocus()
+    {
+        // Focus on getting basements and second-floor rooms
+        startFromSmallRoom = true;
+        startFromLargeRoom = false;
+        startFromMediumRoom = false;
+        sealOpenAnchorsAtEnd = true;
+        
+        // Settings optimized for room variety
+        maxModules = 25; // Allow more modules for variety
+        forceHallwaysFirst = 3; // Fewer forced hallways
+        minHallsBeforeBranching = 2;
+        minDistanceForBranching = 10f;
+        roomChance = 0.25f; // Higher base room chance
+        maxHallsToLargeRoom = 2;
+        minBasementsRequired = 4;
+        secondFloorRoomBoost = 3.0f; // Higher boost for second-floor rooms
+        
+        Debug.Log("[Gen] Configured for basement and second-floor room focus");
+    }
+    
+    [ContextMenu("Configure for Basement Stairs Focus")]
+    public void ConfigureForBasementStairsFocus()
+    {
+        // Focus specifically on basement stairs and basement access
+        startFromSmallRoom = true;
+        startFromLargeRoom = false;
+        startFromMediumRoom = false;
+        sealOpenAnchorsAtEnd = true;
+        
+        // Settings optimized for basement stairs
+        maxModules = 30; // Allow more modules for basement expansion
+        forceHallwaysFirst = 2; // Very few forced hallways
+        minHallsBeforeBranching = 1;
+        minDistanceForBranching = 5f;
+        roomChance = 0.4f; // Very high room chance for basement focus
+        maxHallsToLargeRoom = 2;
+        minBasementsRequired = 6; // More basements needed
+        secondFloorRoomBoost = 2.0f; // Moderate second-floor boost
+        
+        Debug.Log("[Gen] Configured for basement stairs focus - maximum basement expansion");
+    }
+    
+
 
     // REMOVED: All complex nuclear options that were causing problems
 
@@ -328,8 +384,8 @@ public class SimpleLevelGenerator : MonoBehaviour
             Debug.LogWarning($"[Gen] Large room has {connectedCount} connections, maximum should be 3!");
         }
         
-        // Cap excess unconnected anchors to maintain 2-3 open doorways
-        int targetOpenDoorways = Mathf.Clamp(3 - connectedCount, 0, unconnectedAnchors.Count);
+        // LESS AGGRESSIVE CAPPING: Keep more anchors open for expansion
+        int targetOpenDoorways = Mathf.Clamp(4 - connectedCount, 0, unconnectedAnchors.Count); // Increased from 3 to 4
         int anchorsToCapCount = unconnectedAnchors.Count - targetOpenDoorways;
         
         if (anchorsToCapCount > 0)
@@ -1086,6 +1142,13 @@ public class SimpleLevelGenerator : MonoBehaviour
             Transform anchorOwner = GetModuleRootForAnchor(anchor);
             if (anchorOwner != null)
             {
+                // HUGE boost for second-floor rooms to encourage expansion
+                if (IsSecondFloorRoom(anchorOwner.gameObject))
+                {
+                    Debug.Log($"[Gen] Strategic selection: second-floor room anchor {anchor.name} for expansion (priority boost)");
+                    return anchor;
+                }
+                
                 // Prefer anchors on connectors (they're designed for branching)
                 RoomMeta meta = anchorOwner.GetComponent<RoomMeta>();
                 if (meta != null && meta.category == RoomCategory.Hallway)
@@ -1112,6 +1175,13 @@ public class SimpleLevelGenerator : MonoBehaviour
         // Determine what type of module to place based on current generation state
         GameObject prefab = ChooseModuleType(anchor);
         if (prefab == null) return false;
+
+        // CRITICAL: Check if this module type is allowed on this anchor
+        if (!IsModuleTypeAllowedOnAnchor(anchor, GetModuleType(prefab)))
+        {
+            Debug.Log($"[Gen] Module type {GetModuleType(prefab)} not allowed on anchor {anchor.name}, skipping placement");
+            return false;
+        }
 
         // Optional connection-kind compatibility: only proceed if target anchor allows this prefab's kind
         if (!IsConnectionCompatible(prefab, anchor))
@@ -1235,11 +1305,37 @@ public class SimpleLevelGenerator : MonoBehaviour
         }
         else
         {
-            // Check if placed module is a medium room
+            // Check if placed module is a room and track special types
             var meta = placedModule ? placedModule.GetComponent<RoomMeta>() : null;
-            if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.MediumRoom)
+            if (meta != null)
             {
-                placedMediumRooms++;
+                if (meta.subtype == PlacementCatalog.HallSubtype.MediumRoom)
+                {
+                    placedMediumRooms++;
+                }
+                
+                // Track basements and second-floor rooms
+                if (meta.roomType == RoomType.Basement)
+                {
+                    placedBasements++;
+                    Debug.Log($"[Gen] Basement placed! Total: {placedBasements}/{minBasementsRequired}");
+                }
+                
+                if (meta.roomType == RoomType.BasementStairs)
+                {
+                    Debug.Log($"[Gen] Basement stairs placed! This provides basement access");
+                }
+                
+                if (meta.roomType == RoomType.StairRoom)
+                {
+                    Debug.Log($"[Gen] Stair room placed! This provides vertical access");
+                }
+                
+                if (IsSecondFloorRoom(prefab))
+                {
+                    placedSecondFloorRooms++;
+                    Debug.Log($"[Gen] Second-floor room placed! Total: {placedSecondFloorRooms}");
+                }
             }
         }
 
@@ -1336,13 +1432,13 @@ public class SimpleLevelGenerator : MonoBehaviour
             {
                 Debug.Log($"[Gen] Room anchor detected - allowing room-to-room connection for expansion");
                 GameObject room = PickBestRoomPrefab(anchor, true, false);
-                if (room != null) return room;
+                if (room != null && IsRoomAllowedOnAnchor(anchor, room)) return room;
             }
             else
             {
                 // Normal room placement for non-room anchors
                 GameObject room = PickBestRoomPrefab(anchor, true, false);
-                if (room != null) return room;
+                if (room != null && IsRoomAllowedOnAnchor(anchor, room)) return room;
             }
         }
         
@@ -1439,11 +1535,72 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (connectorPrefabs != null && connectorPrefabs.Length > 0)
             {
                 Debug.Log($"[Gen] Trying connector as fallback for {originalPrefab.name}");
-                return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
+                return connectorPrefabs[rng.Next(hallwayPrefabs.Length)];
             }
         }
         
         return null; // No fallback available
+    }
+    
+    // Check if a room is allowed to be placed on this anchor based on room type restrictions
+    bool IsRoomAllowedOnAnchor(Transform anchor, GameObject roomPrefab)
+    {
+        if (!anchor || !roomPrefab) return false;
+        
+        // Get the DoorAnchor component on this anchor
+        DoorAnchor doorAnchor = anchor.GetComponent<DoorAnchor>();
+        if (!doorAnchor) return true; // If no DoorAnchor component, allow all
+        
+        // Get the RoomMeta component on the room prefab
+        RoomMeta roomMeta = roomPrefab.GetComponent<RoomMeta>();
+        if (!roomMeta) return true; // If no RoomMeta component, allow all
+        
+        // SPECIAL RULE: Basements can only spawn at ground level
+        if (roomMeta.roomType == RoomType.Basement && !IsAnchorAtGroundLevel(anchor))
+        {
+            Debug.Log($"[Gen] Basement {roomPrefab.name} NOT allowed on anchor {anchor.name} - not at ground level (Y: {anchor.position.y:F1})");
+            return false;
+        }
+        
+        // Check if the room type is allowed on this anchor
+        bool isAllowed = doorAnchor.AllowsRoomType(roomMeta.roomType);
+        
+        if (!isAllowed)
+        {
+            Debug.Log($"[Gen] Room type {roomMeta.roomType} NOT allowed on anchor {anchor.name} (restriction: {doorAnchor.roomRestriction})");
+        }
+        
+        return isAllowed;
+    }
+    
+    // Check if a module type is allowed to be placed on this anchor
+    bool IsModuleTypeAllowedOnAnchor(Transform anchor, string moduleType)
+    {
+        if (!anchor) return true;
+        
+        DoorAnchor doorAnchor = anchor.GetComponent<DoorAnchor>();
+        if (!doorAnchor) return true; // If no DoorAnchor component, allow all
+        
+        bool isAllowed = doorAnchor.AllowsModuleType(moduleType);
+        
+        if (!isAllowed)
+        {
+            Debug.Log($"[Gen] Module type {moduleType} NOT allowed on anchor {anchor.name} (restriction: {doorAnchor.moduleRestriction})");
+        }
+        
+        return isAllowed;
+    }
+    
+    // Check if we need to force basement placement
+    bool ShouldForceBasementPlacement()
+    {
+        return placedBasements < minBasementsRequired;
+    }
+    
+    // Check if we need to boost second-floor room placement
+    bool ShouldBoostSecondFloorRooms()
+    {
+        return placedSecondFloorRooms < 2; // Boost until we have at least 2 second-floor rooms
     }
     
     // NEW METHOD: Pick straight hallways over angled ones
@@ -2309,13 +2466,13 @@ public class SimpleLevelGenerator : MonoBehaviour
     // Place a large room at a lattice-aligned position offset from origin
     Transform TryPreplaceLargeRoom()
     {
-        // Find a large room prefab
+        // Find a large room prefab (including stair rooms)
         GameObject large = null;
         for (int i = 0; i < roomPrefabs.Length; i++)
         {
             var p = roomPrefabs[i]; if (!p) continue;
             var meta = p.GetComponent<RoomMeta>();
-            if (meta != null && meta.subtype == PlacementCatalog.HallSubtype.LargeRoom)
+            if (meta != null && (meta.subtype == PlacementCatalog.HallSubtype.LargeRoom || meta.roomType == RoomType.StairRoom))
             { large = p; break; }
         }
         if (large == null) return null;
@@ -2648,8 +2805,10 @@ public class SimpleLevelGenerator : MonoBehaviour
     {
         if (!module) return false;
         RoomMeta meta = module.GetComponent<RoomMeta>();
-        return meta != null && meta.category == RoomCategory.Room && 
-               (module.name.ToLower().Contains("large") || module.name.ToLower().Contains("big"));
+        // Check both Room category with large/big names AND StairRoom type
+        return meta != null && 
+               ((meta.category == RoomCategory.Room && (module.name.ToLower().Contains("large") || module.name.ToLower().Contains("big"))) ||
+                meta.roomType == RoomType.StairRoom);
     }
     
     bool IsHallway(Transform module)
@@ -2827,29 +2986,247 @@ public class SimpleLevelGenerator : MonoBehaviour
         return e.prefab;
     }
 
-    // Prefer small/medium rooms when asked, using RoomMeta subtype
+    // Smart room selection with basement and second-floor boosting
     GameObject PickBestRoomPrefab(Transform atAnchor, bool favorSmallMedium, bool gateMedium)
     {
         if (roomPrefabs == null || roomPrefabs.Length == 0) return null;
-        // Simple two-pass: try small/medium first if favored
-        if (favorSmallMedium)
+        
+        // Create a weighted list of eligible rooms
+        var eligibleRooms = new List<GameObject>();
+        var totalWeight = 0f;
+        
+        foreach (GameObject room in roomPrefabs)
         {
-            var pick = PickFirstRoomBySubtype(atAnchor, new PlacementCatalog.HallSubtype?[] {
-                PlacementCatalog.HallSubtype.SmallRoom,
-                gateMedium ? (PlacementCatalog.HallSubtype?)null : PlacementCatalog.HallSubtype.MediumRoom
-            });
-            if (pick != null) return pick;
+            if (!room) continue;
+            
+            // Check if this room can be placed on this anchor
+            if (!IsRoomAllowedOnAnchor(atAnchor, room)) continue;
+            
+            var meta = room.GetComponent<RoomMeta>();
+            if (meta == null) continue;
+            
+            // Apply size preference
+            if (favorSmallMedium && meta.sizeClass != RoomMeta.SizeClass.Small && meta.sizeClass != RoomMeta.SizeClass.Medium) continue;
+            
+            // Apply medium room gating
+            if (gateMedium && meta.sizeClass == RoomMeta.SizeClass.Medium) continue;
+            
+            // Calculate boosted weight based on what we need
+            float boostedWeight = meta.weight;
+            
+            // Boost basement weight if we need more basements
+            if (ShouldForceBasementPlacement() && meta.roomType == RoomType.Basement)
+            {
+                boostedWeight *= 3.0f; // Triple the weight for basements when needed
+                Debug.Log($"[Gen] Boosting basement {room.name} weight from {meta.weight} to {boostedWeight}");
+            }
+            
+            // SPECIAL boost for basement stairs (they're essential for basement access)
+            if (meta.roomType == RoomType.BasementStairs)
+            {
+                boostedWeight *= 4.0f; // 400% boost for basement stairs
+                Debug.Log($"[Gen] SPECIAL boost for basement stairs {room.name} weight from {meta.weight} to {boostedWeight}");
+            }
+            
+            // MASSIVE boost for stair rooms (we need more of them!)
+            if (IsStairRoom(room))
+            {
+                boostedWeight *= 3.0f; // 300% boost for stair rooms
+                Debug.Log($"[Gen] MASSIVE boost for stair room {room.name} weight from {meta.weight} to {boostedWeight}");
+            }
+            
+            // EXTRA boost for stair rooms when we need more anchors
+            if (IsStairRoom(room) && availableAnchors.Count < 5)
+            {
+                boostedWeight *= 2.0f; // Additional 200% boost when anchor count is low
+                Debug.Log($"[Gen] EXTRA boost for stair room {room.name} - low anchor count ({availableAnchors.Count}), final weight: {boostedWeight}");
+            }
+            
+            // HUGE boost for stair rooms on second-floor anchors
+            if (IsStairRoom(room) && IsAnchorOnSecondFloor(atAnchor))
+            {
+                boostedWeight *= 5.0f; // 500% boost for stair rooms on second-floor anchors
+                Debug.Log($"[Gen] HUGE boost for stair room {room.name} on second-floor anchor - final weight: {boostedWeight}");
+            }
+            
+            // Boost second-floor room weight if we need more
+            if (ShouldBoostSecondFloorRooms() && IsSecondFloorRoom(room))
+            {
+                boostedWeight *= secondFloorRoomBoost; // Apply the boost multiplier
+                Debug.Log($"[Gen] Boosting second-floor room {room.name} weight from {meta.weight} to {boostedWeight}");
+            }
+            
+            eligibleRooms.Add(room);
+            totalWeight += boostedWeight;
         }
-        // If we still need a medium room, try to pick one occasionally
-        if (placedMediumRooms < targetMediumRooms)
+        
+        if (eligibleRooms.Count == 0) return null;
+        
+        // Weighted random selection using boosted weights
+        float randomValue = (float)rng.NextDouble() * totalWeight;
+        float currentWeight = 0f;
+        
+        foreach (GameObject room in eligibleRooms)
         {
-            var tryMedium = PickFirstRoomBySubtype(atAnchor, new PlacementCatalog.HallSubtype?[] {
-                PlacementCatalog.HallSubtype.MediumRoom
-            });
-            if (tryMedium != null) return tryMedium;
+            var meta = room.GetComponent<RoomMeta>();
+            float boostedWeight = meta.weight;
+            
+            // Apply the same boosting logic for weight calculation
+            if (ShouldForceBasementPlacement() && meta.roomType == RoomType.Basement)
+            {
+                boostedWeight *= 3.0f;
+            }
+            
+            // SPECIAL boost for basement stairs (they're essential for basement access)
+            if (meta.roomType == RoomType.BasementStairs)
+            {
+                boostedWeight *= 4.0f; // 400% boost for basement stairs
+            }
+            
+            // MASSIVE boost for stair rooms (we need more of them!)
+            if (IsStairRoom(room))
+            {
+                boostedWeight *= 3.0f; // 300% boost for stair rooms
+            }
+            
+            // EXTRA boost for stair rooms when we need more anchors
+            if (IsStairRoom(room) && availableAnchors.Count < 5)
+            {
+                boostedWeight *= 2.0f; // Additional 200% boost when anchor count is low
+            }
+            
+            // HUGE boost for stair rooms on second-floor anchors
+            if (IsStairRoom(room) && IsAnchorOnSecondFloor(atAnchor))
+            {
+                boostedWeight *= 5.0f; // 500% boost for stair rooms on second-floor anchors
+            }
+            
+            if (ShouldBoostSecondFloorRooms() && IsSecondFloorRoom(room))
+            {
+                boostedWeight *= secondFloorRoomBoost;
+            }
+            
+            currentWeight += boostedWeight;
+            if (randomValue <= currentWeight)
+            {
+                return room;
+            }
         }
-        // Fallback any room
-        return PickFirstRoomBySubtype(atAnchor, (PlacementCatalog.HallSubtype?[])null);
+        
+        return eligibleRooms[eligibleRooms.Count - 1]; // Fallback
+    }
+    
+    // Check if a room is a second-floor room (simple name-based detection)
+    bool IsSecondFloorRoom(GameObject room)
+    {
+        if (!room) return false;
+        
+        string name = room.name.ToLower();
+        return name.Contains("second") || name.Contains("2nd") || name.Contains("upper") || 
+               name.Contains("floor") || name.Contains("level") || name.Contains("upstairs") ||
+               name.Contains("stair") || name.Contains("stairs"); // Include stair rooms
+    }
+    
+    // Check if a room is a stair room (for special boosting)
+    bool IsStairRoom(GameObject room)
+    {
+        if (!room) return false;
+        
+        string name = room.name.ToLower();
+        return name.Contains("stair") || name.Contains("stairs") || name.Contains("step");
+    }
+    
+    // Check if a room is a basement stairs room (for special basement logic)
+    bool IsBasementStairsRoom(GameObject room)
+    {
+        if (!room) return false;
+        
+        var meta = room.GetComponent<RoomMeta>();
+        if (meta != null && meta.roomType == RoomType.BasementStairs)
+        {
+            return true;
+        }
+        
+        // Fallback name-based detection
+        string name = room.name.ToLower();
+        return name.Contains("basement") && (name.Contains("stair") || name.Contains("stairs") || name.Contains("step"));
+    }
+    
+    // Check if an anchor is at ground level (for basement restrictions)
+    bool IsAnchorAtGroundLevel(Transform anchor)
+    {
+        if (!anchor) return true; // Default to allowing if we can't check
+        
+        // Consider ground level to be Y = 0 or very close to it
+        float yPosition = anchor.position.y;
+        return Mathf.Abs(yPosition) < 2.0f; // Allow some tolerance for slight variations
+    }
+    
+    // Check if an anchor is on the second floor (for stair room placement)
+    bool IsAnchorOnSecondFloor(Transform anchor)
+    {
+        if (!anchor) return false;
+        
+        // Consider second floor to be above Y = 5 (above ground level)
+        float yPosition = anchor.position.y;
+        return yPosition > 5.0f;
+    }
+    
+    // Determine what type of module a prefab is
+    string GetModuleType(GameObject prefab)
+    {
+        if (!prefab) return "Unknown";
+        
+        // Check if it's a connector
+        if (connectorPrefabs != null && Array.Exists(connectorPrefabs, p => p && p.name == prefab.name))
+        {
+            return "Connector";
+        }
+        
+        // Check if it's a hallway
+        if (hallwayPrefabs != null && Array.Exists(hallwayPrefabs, p => p && p.name == prefab.name))
+        {
+            return "Hallway";
+        }
+        
+        // Check if it's a room
+        if (roomPrefabs != null && Array.Exists(roomPrefabs, p => p && p.name == prefab.name))
+        {
+            return "Room";
+        }
+        
+        // Default fallback
+        return "Unknown";
+    }
+    
+    // Check if an anchor is a good spot for expansion (prevents bad placement)
+    bool IsGoodExpansionSpot(Transform anchor)
+    {
+        if (!anchor) return true;
+        
+        // Check if there's enough space around this anchor
+        Vector3 anchorPos = anchor.position;
+        int nearbyModules = 0;
+        
+        foreach (Transform module in placedModules)
+        {
+            if (!module) continue;
+            
+            float distance = Vector3.Distance(anchorPos, module.position);
+            if (distance < 12f) // If closer than 12 units, count as nearby
+            {
+                nearbyModules++;
+            }
+        }
+        
+        // If there are too many nearby modules, this might be a cramped spot
+        if (nearbyModules > 3)
+        {
+            Debug.Log($"[Gen] Anchor {anchor.name} might be cramped ({nearbyModules} nearby modules), not ideal for expansion");
+            return false;
+        }
+        
+        return true;
     }
 
     GameObject PickFirstRoomBySubtype(Transform atAnchor, PlacementCatalog.HallSubtype?[] preferred)
@@ -2901,7 +3278,8 @@ public class SimpleLevelGenerator : MonoBehaviour
     {
         if (!prefab) return false;
         var meta = prefab.GetComponent<RoomMeta>();
-        return meta != null && meta.subtype == PlacementCatalog.HallSubtype.LargeRoom;
+        // Check both the old LargeRoom subtype and the new StairRoom type
+        return meta != null && (meta.subtype == PlacementCatalog.HallSubtype.LargeRoom || meta.roomType == RoomType.StairRoom);
     }
 
     void ForceCapAllOpenAnchors()
@@ -3494,7 +3872,7 @@ public class SimpleLevelGenerator : MonoBehaviour
 
                 // SMART CAPPING: Use appropriate door cap based on anchor type
                 RoomMeta ownerMeta = owner ? owner.GetComponent<RoomMeta>() : null;
-                bool isRoomAnchor = ownerMeta != null && ownerMeta.category == RoomCategory.Room;
+                bool isRoomAnchor = ownerMeta != null && (ownerMeta.category == RoomCategory.Room || ownerMeta.roomType == RoomType.StairRoom);
                 
                 GameObject prefab;
                 if (isRoomAnchor && roomDoorCapPrefab != null)
