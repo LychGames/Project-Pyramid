@@ -1,110 +1,92 @@
 ﻿// Assets/Scripts/DoorAnchor.cs
-// Simple marker component + gizmo. Blue Z must point OUTWARD from the doorway.
+// Simple, reliable door anchor component for procedural generation
 
 using UnityEngine;
 
-// Room restriction types for door anchors
+// Simple room restriction types
 public enum RoomRestriction { Any, Specific }
 
-// Module restriction types for door anchors
-public enum ModuleRestriction { Any, RoomsOnly, HallwaysOnly, ConnectorsOnly, SpecificRoomType }
+// Simple module restriction types  
+public enum ModuleRestriction { Any, RoomsOnly, HallwaysOnly, ConnectorsOnly }
 
 [ExecuteAlways]
 public class DoorAnchor : MonoBehaviour
 {
+    [Header("Visual Debug")]
     public Color gizmoColor = new Color(0.2f, 0.8f, 1f, 0.75f);
     public float gizmoSize = 0.25f;
     
-    [Header("Collision Detection")]
-    [SerializeField] Vector3 colliderSize = new Vector3(0.5f, 2f, 0.1f);
-    [SerializeField] Vector3 colliderCenter = Vector3.zero;
-    [SerializeField] bool autoManageCollider = true; // If off, your manual BoxCollider edits are preserved
-    
-    public enum ConnectionFilterMode { All, Specific }
-
     [Header("Connection Rules")]
+    [Tooltip("What types of modules can connect to this anchor")]
+    public ModuleRestriction moduleRestriction = ModuleRestriction.Any;
+    
+    [Header("Room Restrictions")]
+    [Tooltip("What type of rooms this anchor can connect to")]
+    public RoomRestriction roomRestriction = RoomRestriction.Any;
+    [Tooltip("If RoomRestriction is Specific, only this room type can connect")]
+    public RoomType allowedRoomType = RoomType.Regular;
+    
+    [Header("Connection Filter")]
     [Tooltip("All = accepts any kind. Specific = only the selected kind.")]
     public ConnectionFilterMode filterMode = ConnectionFilterMode.All;
     [Tooltip("If filterMode = Specific, only this kind will be accepted.")]
     public ConnectionKind specificKind = ConnectionKind.StraightHall;
-    [Tooltip("If filterMode = Specific, use this list to allow multiple kinds. If empty, 'specificKind' is used.")]
+    [Tooltip("If filterMode = Specific, use this list to allow multiple kinds")]
     public ConnectionKind[] specificKinds = new ConnectionKind[0];
-    
-    [Header("Special Room Restrictions")]
-    [Tooltip("What type of rooms this anchor can connect to")]
-    public RoomRestriction roomRestriction = RoomRestriction.Any;
-    [Tooltip("If RoomRestriction is Specific, only this room type can connect")]
-    public RoomType allowedRoomType = RoomType.Extract;
-    
-    [Header("Module Type Restrictions")]
-    [Tooltip("What types of modules can connect to this anchor")]
-    public ModuleRestriction moduleRestriction = ModuleRestriction.Any;
     
     // Legacy field retained for backward compatibility but hidden from Inspector
     [HideInInspector]
     public ConnectionKind[] canConnectTo = new ConnectionKind[0];
     
+    public enum ConnectionFilterMode { All, Specific }
+    
     private BoxCollider doorCollider;
 
     void Awake()
     {
-        if (!autoManageCollider)
-        {
-            // Do not add a collider; just cache if one exists
-            doorCollider = GetComponent<BoxCollider>();
-            return;
-        }
-
         EnsureCollider();
-        if (doorCollider != null)
-        {
-            ApplyFieldsToCollider();
-        }
     }
 
     void OnValidate()
     {
         if (Application.isPlaying) return;
-
-#if UNITY_EDITOR
-        // Avoid editing prefab asset contents directly
-        if (UnityEditor.PrefabUtility.IsPartOfPrefabAsset(this)) return;
-#endif
-
-        if (!autoManageCollider)
-        {
-            // Do not add a collider; just cache if one exists
-            doorCollider = GetComponent<BoxCollider>();
-            return;
-        }
-
         EnsureCollider();
-        if (doorCollider == null) return;
-
-        ApplyFieldsToCollider();
     }
 
     void EnsureCollider()
     {
         if (doorCollider == null)
             doorCollider = GetComponent<BoxCollider>();
-        if (doorCollider == null) return;              // ← early out, no auto-add
+            
+        if (doorCollider == null)
+        {
+            doorCollider = gameObject.AddComponent<BoxCollider>();
+        }
+        
         doorCollider.isTrigger = true;
+        doorCollider.size = new Vector3(0.5f, 2f, 0.1f);
+        doorCollider.center = Vector3.zero;
+        
+        // Set to DoorTrigger layer if it exists
         TrySetDoorTriggerLayer();
     }
 
-    void ApplyFieldsToCollider()
+    void TrySetDoorTriggerLayer()
     {
-        if (doorCollider == null) return;
-        doorCollider.isTrigger = true;
-        doorCollider.size = colliderSize;
-        doorCollider.center = colliderCenter;
-        TrySetDoorTriggerLayer();
+        int layer = LayerMask.NameToLayer("DoorTrigger");
+        if (layer != -1)
+        {
+            gameObject.layer = layer;
+        }
     }
 
+    /// <summary>
+    /// Check if this anchor allows a specific connection kind
+    /// </summary>
     public bool Allows(ConnectionKind kind)
     {
         if (filterMode == ConnectionFilterMode.All) return true;
+        
         if (specificKinds != null && specificKinds.Length > 0)
         {
             for (int i = 0; i < specificKinds.Length; i++)
@@ -113,17 +95,22 @@ public class DoorAnchor : MonoBehaviour
             }
             return false;
         }
+        
         return kind == specificKind;
     }
     
-    // Check if a specific room type is allowed on this anchor
+    /// <summary>
+    /// Check if a specific room type is allowed on this anchor
+    /// </summary>
     public bool AllowsRoomType(RoomType roomType)
     {
         if (roomRestriction == RoomRestriction.Any) return true;
         return roomType == allowedRoomType;
     }
     
-    // Check if a specific module type can connect to this anchor
+    /// <summary>
+    /// Check if a specific module type can connect to this anchor
+    /// </summary>
     public bool AllowsModuleType(string moduleType)
     {
         if (moduleRestriction == ModuleRestriction.Any) return true;
@@ -136,45 +123,71 @@ public class DoorAnchor : MonoBehaviour
                 return moduleType == "Hallway";
             case ModuleRestriction.ConnectorsOnly:
                 return moduleType == "Connector";
-            case ModuleRestriction.SpecificRoomType:
-                // For specific room types, only allow rooms (no hallways/connectors)
-                return moduleType == "Room";
             default:
                 return true;
         }
     }
 
-    void TrySetDoorTriggerLayer()
+    /// <summary>
+    /// Check if this anchor can connect to a specific module based on all restrictions
+    /// </summary>
+    public bool CanConnectTo(GameObject module)
     {
-        int layer = LayerMask.NameToLayer("DoorTrigger");
-        if (layer != -1)
+        if (module == null) return false;
+        
+        var roomMeta = module.GetComponent<RoomMeta>();
+        if (roomMeta == null) return false;
+        
+        // Check module type restriction
+        string moduleType = GetModuleType(roomMeta);
+        if (!AllowsModuleType(moduleType)) return false;
+        
+        // Check room type restriction
+        if (!AllowsRoomType(roomMeta.roomType)) return false;
+        
+        // Check connection kind restriction
+        if (!Allows(roomMeta.connectionKind)) return false;
+        
+        return true;
+    }
+    
+    /// <summary>
+    /// Get the module type string from RoomMeta
+    /// </summary>
+    private string GetModuleType(RoomMeta roomMeta)
+    {
+        switch (roomMeta.category)
         {
-            gameObject.layer = layer;
-        }
-        else
-        {
-            // Only warn in the editor
-            #if UNITY_EDITOR
-            Debug.LogWarning("DoorTrigger layer not found! Please create it in Project Settings > Tags and Layers");
-            #endif
+            case RoomCategory.Room:
+                return "Room";
+            case RoomCategory.Hallway:
+                return "Hallway";
+            case RoomCategory.Junction:
+                return "Connector";
+            case RoomCategory.Start:
+                return "Room";
+            default:
+                return "Room";
         }
     }
 
     void OnDrawGizmos()
     {
+        // Draw anchor cube
         Gizmos.color = gizmoColor;
         Gizmos.DrawWireCube(transform.position, new Vector3(gizmoSize, gizmoSize * 0.6f, gizmoSize));
-        // Draw forward arrow (blue)
+        
+        // Draw forward arrow (blue) - this shows the direction the anchor points
         var p = transform.position;
         var f = transform.forward * (gizmoSize * 1.5f);
         Gizmos.color = Color.cyan;
         Gizmos.DrawLine(p, p + f);
         Gizmos.DrawWireSphere(p + f, gizmoSize * 0.12f);
         
-        // Draw collider bounds
+        // Draw collider bounds in a different color to avoid confusion
         if (doorCollider != null)
         {
-            Gizmos.color = new Color(1f, 0f, 0f, 0.3f);
+            Gizmos.color = new Color(0f, 1f, 0f, 0.3f); // Green instead of red
             Gizmos.matrix = transform.localToWorldMatrix;
             Gizmos.DrawWireCube(doorCollider.center, doorCollider.size);
         }

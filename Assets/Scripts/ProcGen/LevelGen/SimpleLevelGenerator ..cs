@@ -76,7 +76,7 @@ public class SimpleLevelGenerator : MonoBehaviour
     [Tooltip("Grow a few steps from each start anchor before free growth")] 
     [SerializeField] bool forceInitialGrowthFromAllStartAnchors = true;
     [SerializeField] int initialStepsPerStart = 2;
-    
+
     [Header("Simplified Generation Settings")]
     [Tooltip("Force hallways for the first N placements to create longer paths")]
     [SerializeField] int forceHallwaysFirst = 8;
@@ -1310,8 +1310,8 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (meta != null)
             {
                 if (meta.subtype == PlacementCatalog.HallSubtype.MediumRoom)
-                {
-                    placedMediumRooms++;
+            {
+                placedMediumRooms++;
                 }
                 
                 // Track basements and second-floor rooms
@@ -1373,7 +1373,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         
         // Get basic info
         float distanceFromStart = Vector3.Distance(anchor.position, Vector3.zero);
-        
+
         // ENCOURAGE BRANCHING: If we have many available anchors, prefer connectors
         bool manyAnchorsAvailable = availableAnchors.Count > 3;
         
@@ -1402,7 +1402,7 @@ public class SimpleLevelGenerator : MonoBehaviour
                 }
                 
                 // Fallback to any connector
-                return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
+            return connectorPrefabs[rng.Next(connectorPrefabs.Length)];
             }
         }
         
@@ -1621,9 +1621,9 @@ public class SimpleLevelGenerator : MonoBehaviour
             if (name.Contains("left") || name.Contains("right") || name.Contains("15") || name.Contains("30"))
             {
                 angledHalls.Add(hall);
-            }
-            else
-            {
+        }
+        else
+        {
                 straightHalls.Add(hall);
             }
         }
@@ -1637,7 +1637,7 @@ public class SimpleLevelGenerator : MonoBehaviour
         {
             return angledHalls[rng.Next(angledHalls.Count)];
         }
-        
+
         return null;
     }
 
@@ -3783,9 +3783,9 @@ public class SimpleLevelGenerator : MonoBehaviour
             float distance = Vector3.Distance(anchor.position, otherAnchor.position);
             if (distance < 3.0f) // If there's another anchor within 3 units, not isolated
             {
-                return false;
-            }
-            
+            return false;
+        }
+        
             // ENHANCEMENT: For extremely close anchors, add rotation validation
             // This catches overlapping cases where anchors are very close but not properly aligned
             if (distance < 0.5f) // Only check rotation for very close anchors
