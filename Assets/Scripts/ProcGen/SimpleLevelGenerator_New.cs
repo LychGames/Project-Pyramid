@@ -97,46 +97,48 @@ public class SimpleLevelGenerator_New : MonoBehaviour
     void GenerateFromAnchors()
     {
         int iterations = 0;
-        const int maxIterations = 1000; // Safety limit
+        const int maxIterations = 2000; // Higher limit for better expansion
         
         // Initial anchor scan
         UpdateAvailableAnchors();
         Debug.Log($"[Gen] Found {availableAnchors.Count} initial anchors");
         
+        // Main generation loop - process multiple anchors per iteration for better branching
         while (availableAnchors.Count > 0 && placedModules.Count < maxModules && iterations < maxIterations)
         {
             iterations++;
             
-            // Get next available anchor
-            Transform anchor = GetNextAnchor();
-            if (anchor == null) break;
+            // Process multiple anchors per iteration for better branching
+            int anchorsToProcess = Mathf.Min(3, availableAnchors.Count); // Process up to 3 anchors per iteration
+            List<Transform> anchorsThisIteration = new List<Transform>();
             
-            Debug.Log($"[Gen] Working with anchor: {anchor.name} at {anchor.position}");
-            
-            // Try to place a module
-            GameObject module = ChooseModuleType(anchor);
-            if (module == null) 
+            // Select anchors for this iteration
+            for (int i = 0; i < anchorsToProcess; i++)
             {
-                Debug.Log($"[Gen] No module chosen for anchor {anchor.name}");
-                continue;
+                Transform anchor = SelectBestAnchor();
+                if (anchor != null)
+                {
+                    anchorsThisIteration.Add(anchor);
+                    availableAnchors.Remove(anchor);
+                }
             }
             
-            // Try to place the module
-            if (TryPlaceModule(anchor, module))
+            Debug.Log($"[Gen] Processing {anchorsThisIteration.Count} anchors in iteration {iterations}");
+            
+            // Process each selected anchor
+            foreach (Transform anchor in anchorsThisIteration)
             {
-                Debug.Log($"[Gen] Successfully placed {module.name} on anchor {anchor.name}");
-                
-                // Mark this anchor as used
-                usedAnchors.Add(anchor);
-            }
-            else
-            {
-                Debug.Log($"[Gen] Failed to place {module.name} on anchor {anchor.name}");
+                ProcessAnchor(anchor);
             }
             
-            // Update available anchors
+            // Update available anchors for next iteration
             UpdateAvailableAnchors();
-            Debug.Log($"[Gen] Available anchors after update: {availableAnchors.Count}");
+            
+            // Check if we're making progress
+            if (iterations % 10 == 0)
+            {
+                Debug.Log($"[Gen] Progress: {placedModules.Count} modules, {availableAnchors.Count} anchors available");
+            }
         }
         
         if (iterations >= maxIterations)
@@ -148,18 +150,60 @@ public class SimpleLevelGenerator_New : MonoBehaviour
     }
     
     /// <summary>
-    /// Get the next anchor to work with
+    /// Select the best anchor to process next (prioritizes branching potential)
     /// </summary>
-    Transform GetNextAnchor()
+    Transform SelectBestAnchor()
     {
         if (availableAnchors.Count == 0) return null;
         
-        // Just pick the first available anchor
-        Transform anchor = availableAnchors[0];
-        availableAnchors.RemoveAt(0);
+        // Prioritize anchors that can create better branching
+        var priorityAnchors = availableAnchors.Where(a => 
+        {
+            // Check if this anchor is on a connector (better for branching)
+            var parentModule = a.parent;
+            if (parentModule == null) return false;
+            
+            // Connectors get priority for better branching
+            return parentModule.name.ToLower().Contains("connector");
+        }).ToList();
         
-        Debug.Log($"[Gen] Selected anchor: {anchor.name} at {anchor.position}");
-        return anchor;
+        if (priorityAnchors.Count > 0)
+        {
+            return priorityAnchors[Random.Range(0, priorityAnchors.Count)];
+        }
+        
+        // Fallback to random selection
+        return availableAnchors[Random.Range(0, availableAnchors.Count)];
+    }
+    
+    /// <summary>
+    /// Process a single anchor - try to place the best module type
+    /// </summary>
+    void ProcessAnchor(Transform anchor)
+    {
+        Debug.Log($"[Gen] Processing anchor: {anchor.name} at {anchor.position}");
+        
+        // Try to place a module
+        GameObject module = ChooseModuleType(anchor);
+        if (module == null) 
+        {
+            Debug.Log($"[Gen] No module chosen for anchor {anchor.name}");
+            usedAnchors.Add(anchor);
+            return;
+        }
+        
+        // Try to place the module
+        if (TryPlaceModule(anchor, module))
+        {
+            Debug.Log($"[Gen] Successfully placed {module.name} on anchor {anchor.name}");
+            usedAnchors.Add(anchor);
+        }
+        else
+        {
+            Debug.Log($"[Gen] Failed to place {module.name} on anchor {anchor.name}");
+            // Don't mark as used if placement failed - let it try again later
+            availableAnchors.Add(anchor);
+        }
     }
     
     /// <summary>
@@ -167,24 +211,35 @@ public class SimpleLevelGenerator_New : MonoBehaviour
     /// </summary>
     GameObject ChooseModuleType(Transform anchor)
     {
-        // Simple priority: connector -> hallway -> room
-        if (connectorPrefabs.Length > 0)
+        // Strategic decision making for better branching
+        float decision = Random.Range(0f, 1f);
+        
+        // 40% chance to prioritize connectors for better branching
+        if (decision < 0.4f && connectorPrefabs.Length > 0)
         {
-            Debug.Log($"[Gen] Choosing connector for {anchor.name}");
+            Debug.Log($"[Gen] Strategically choosing connector for {anchor.name} (branching priority)");
             return connectorPrefabs[Random.Range(0, connectorPrefabs.Length)];
         }
         
+        // 30% chance to place a room for variety
+        if (decision < 0.7f && roomPrefabs.Length > 0)
+        {
+            Debug.Log($"[Gen] Choosing room for {anchor.name} (variety)");
+            return roomPrefabs[Random.Range(0, roomPrefabs.Length)];
+        }
+        
+        // Default to hallway for better flow
         if (hallwayPrefabs.Length > 0)
         {
-            Debug.Log($"[Gen] Choosing hallway for {anchor.name}");
+            Debug.Log($"[Gen] Choosing hallway for {anchor.name} (flow)");
             return hallwayPrefabs[Random.Range(0, hallwayPrefabs.Length)];
         }
         
+        // Fallbacks
+        if (connectorPrefabs.Length > 0)
+            return connectorPrefabs[Random.Range(0, connectorPrefabs.Length)];
         if (roomPrefabs.Length > 0)
-        {
-            Debug.Log($"[Gen] Choosing room for {anchor.name}");
             return roomPrefabs[Random.Range(0, roomPrefabs.Length)];
-        }
         
         Debug.LogWarning($"[Gen] No prefabs available for {anchor.name}");
         return null;
